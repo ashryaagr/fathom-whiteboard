@@ -5,8 +5,13 @@
 // entry point so bundlers building a browser bundle (Vite renderer
 // process) can import it without dragging the Claude Agent SDK
 // (Node-only) into the browser bundle.
-export { generateWhiteboard, refineWhiteboard, HOSTED_EXCALIDRAW_MCP_URL } from './pipeline.js';
-export { resolveHosted, spawnLocalMcp } from './mcp-launcher.js';
+export {
+  generateWhiteboard,
+  refineWhiteboard,
+  HOSTED_EXCALIDRAW_MCP_URL,
+  type McpOverride,
+} from './pipeline.js';
+export { resolveHosted, spawnLocalMcp, type McpHandle } from './mcp-launcher.js';
 export { COLEAM_SKILL } from './skill.js';
 
 // Shared types — safe to re-export from both entries.
@@ -15,5 +20,4 @@ export type {
   WhiteboardScene,
   GenerateCallbacks,
   PaperRef,
-  McpConfig,
 } from './types.js';

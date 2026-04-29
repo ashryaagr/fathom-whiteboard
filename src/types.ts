@@ -33,10 +33,7 @@ export type PaperRef =
   | { kind: 'text'; markdown: string; title?: string }
   | { kind: 'path'; absPath: string; title?: string };
 
-// MCP server configuration. By default we point at the hosted endpoint, which
-// matches the control experiment that produced the design we're aligning to.
-// `local` is reserved for spawning vendor/excalidraw-mcp once that build path
-// is wired up; for now `hosted` is the supported route.
-export type McpConfig =
-  | { kind: 'hosted'; url?: string }
-  | { kind: 'local'; spawn?: () => Promise<{ url: string; dispose: () => Promise<void> }> };
+// (McpConfig removed — pipeline now defaults to a per-call local spawn.
+// Advanced overrides go through the `mcpOverride` argument on
+// generateWhiteboard / refineWhiteboard, typed as `McpHandle` from
+// mcp-launcher.ts: `{ url: string; dispose: () => Promise<void> }`.)

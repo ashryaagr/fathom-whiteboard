@@ -12,5 +12,4 @@ export type {
   WhiteboardScene,
   GenerateCallbacks,
   PaperRef,
-  McpConfig,
 } from './types.js';

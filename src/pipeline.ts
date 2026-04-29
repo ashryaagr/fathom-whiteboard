@@ -1,9 +1,12 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { COLEAM_SKILL } from './skill.js';
-import { HOSTED_EXCALIDRAW_MCP_URL, resolveHosted } from './mcp-launcher.js';
+import {
+  HOSTED_EXCALIDRAW_MCP_URL,
+  spawnLocalMcp,
+  type McpHandle,
+} from './mcp-launcher.js';
 import type {
   GenerateCallbacks,
-  McpConfig,
   PaperRef,
   WhiteboardScene,
 } from './types.js';
@@ -14,9 +17,9 @@ const EXCALIDRAW_TOOLS = [
 ];
 
 // System prompt = coleam SKILL.md verbatim + Fathom-specific suffix.
-// The suffix sets context (research-paper teaching whiteboard) and pins the
-// pattern proved out by the control experiment: read_me ONCE, then create_view
-// ONCE with the final elements JSON.
+// The suffix sets context (research-paper teaching whiteboard) and pins
+// the pattern proved out by the control experiment: read_me ONCE, then
+// create_view ONCE with the final elements JSON.
 const SYSTEM_SUFFIX = `
 
 ────────────────────────────
@@ -36,17 +39,15 @@ function buildUserMessage(paper: PaperRef, prompt?: string): string {
   if (paper.kind === 'text') {
     return `${titleLine}${paper.markdown}\n\n${prompt ?? 'Generate the teaching whiteboard now.'}`;
   }
-  // path: Claude reads the file via its Read tool; we still gate that in a moment.
   return `${titleLine}The paper is at: ${paper.absPath}\n\nRead it (you may use the Read tool), then generate the teaching whiteboard.\n\n${prompt ?? ''}`;
 }
 
 // Extract the most recent valid scene from create_view tool inputs.
-// excalidraw-mcp's create_view takes elements as input; we capture them as the
-// agent calls it and use the latest call as the final scene.
+// excalidraw-mcp's create_view takes elements as input; we capture them
+// as the agent calls it and use the latest call as the final scene.
 function tryExtractScene(input: unknown): WhiteboardScene | null {
   if (!input || typeof input !== 'object') return null;
   const obj = input as Record<string, unknown>;
-  // Common shape: { elements: [...] } or { view: { elements: [...] } } or { elements: {...} }
   if (Array.isArray(obj.elements)) {
     return { elements: obj.elements as WhiteboardScene['elements'] };
   }
@@ -57,6 +58,16 @@ function tryExtractScene(input: unknown): WhiteboardScene | null {
     }
   }
   return null;
+}
+
+// `mcpOverride` lets advanced consumers point the pipeline at a
+// pre-spawned MCP (their own, hosted, mocked for tests, etc.). When
+// undefined, the pipeline spawns a fresh local instance per call.
+export type McpOverride = McpHandle;
+
+async function resolveMcp(override: McpOverride | undefined): Promise<McpHandle> {
+  if (override) return override;
+  return spawnLocalMcp();
 }
 
 async function runAgent(opts: {
@@ -80,13 +91,10 @@ async function runAgent(opts: {
         excalidraw: { type: 'http', url: mcpUrl },
       },
       allowedTools,
-      // Disable all SDK setting sources (CLAUDE.md, project config, user config) so the
-      // pipeline runs with exactly the prompt we authored, nothing else.
+      // Disable host-side setting sources (CLAUDE.md, project config,
+      // user config) so the pipeline runs with exactly the prompt we
+      // authored, nothing else.
       settingSources: [],
-      // Lock down built-in tools — we want only what's in `allowedTools` above.
-      // The SDK respects `allowedTools`, but explicitly empty `tools` ensures no
-      // built-in (Bash, ToolSearch, …) leaks in. Some SDK versions ignore an empty
-      // tools array; allowedTools is the durable filter.
       includePartialMessages: true,
     } as unknown as Parameters<typeof query>[0]['options'],
   });
@@ -128,14 +136,10 @@ async function runAgent(opts: {
 export async function generateWhiteboard(
   paper: PaperRef,
   cb?: GenerateCallbacks,
-  mcp: McpConfig = { kind: 'hosted' },
+  mcpOverride?: McpOverride,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
-  const handle =
-    mcp.kind === 'local' && mcp.spawn
-      ? await mcp.spawn()
-      : mcp.kind === 'hosted' && mcp.url
-        ? { url: mcp.url, dispose: async () => {} }
-        : await resolveHosted();
+  const handle = await resolveMcp(mcpOverride);
+  const ownsHandle = !mcpOverride;
   try {
     const result = await runAgent({
       systemPrompt: buildSystemPrompt(),
@@ -150,25 +154,21 @@ export async function generateWhiteboard(
     cb?.onError?.(err as Error);
     throw err;
   } finally {
-    await handle.dispose();
+    // Only dispose handles we created. Caller-supplied overrides retain
+    // ownership — they may want to reuse the same instance across calls.
+    if (ownsHandle) await handle.dispose();
   }
 }
 
-// Refine an existing scene given a user instruction. We give the agent the
-// previous scene as JSON and ask it to emit a new scene. Same tool surface.
 export async function refineWhiteboard(
   prevScene: WhiteboardScene,
   paper: PaperRef,
   userInstruction: string,
   cb?: GenerateCallbacks,
-  mcp: McpConfig = { kind: 'hosted' },
+  mcpOverride?: McpOverride,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
-  const handle =
-    mcp.kind === 'local' && mcp.spawn
-      ? await mcp.spawn()
-      : mcp.kind === 'hosted' && mcp.url
-        ? { url: mcp.url, dispose: async () => {} }
-        : await resolveHosted();
+  const handle = await resolveMcp(mcpOverride);
+  const ownsHandle = !mcpOverride;
   try {
     const sceneJson = JSON.stringify(prevScene, null, 2);
     const userMessage =
@@ -191,7 +191,7 @@ export async function refineWhiteboard(
     cb?.onError?.(err as Error);
     throw err;
   } finally {
-    await handle.dispose();
+    if (ownsHandle) await handle.dispose();
   }
 }
 

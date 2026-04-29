@@ -24,13 +24,15 @@
   },
   "files": [
     "dist",
+    "scripts/build-vendor.mjs",
     "src/SKILL.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "postinstall": "node scripts/build-vendor.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
