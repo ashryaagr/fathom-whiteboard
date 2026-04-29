@@ -76,6 +76,9 @@ function viewportEqual(a: WhiteboardViewport | null, b: WhiteboardViewport): boo
   );
 }
 
+const SIDE_PANEL_WIDTH = 360;
+const SIDE_PANEL_COLLAPSED_WIDTH = 28;
+
 export function Whiteboard({ host, autoGenerate = true }: Props) {
   // Mount Excalidraw on first render with an empty scene so we can
   // call updateScene() the moment the agent emits its first
@@ -89,29 +92,49 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const apiRef = useRef<ExcalidrawApi | null>(null);
   // Latest scene the agent emitted. We keep it in a ref because
   // chat-refinement needs to send the current state synchronously.
   const sceneRef = useRef<WhiteboardScene>({ elements: [] });
+  const logFeedRef = useRef<HTMLDivElement | null>(null);
 
   // Viewport plumbing.
-  // - `pendingInitialViewport` holds a viewport returned by host.loadViewport()
-  //   before the Excalidraw API is ready; we apply it as soon as the API
-  //   binds.
-  // - `didAutoFit` records whether we've already auto-scrolled-to-content
-  //   for this paper. We auto-fit ONCE per paper, the first time generation
-  //   produces a non-empty scene AND there is no persisted viewport. We
-  //   never re-fit on subsequent renders, sidecar hydrations, or chat
-  //   refinements — that would fight the user's manual pan/zoom.
-  // - `lastSavedViewportRef` is the last viewport we wrote to disk; we
-  //   compare against it to suppress redundant saves.
   const pendingInitialViewportRef = useRef<WhiteboardViewport | null>(null);
   const didAutoFitRef = useRef(false);
   const lastSavedViewportRef = useRef<WhiteboardViewport | null>(null);
   const saveViewportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Streaming auto-save plumbing. Every applySceneToCanvas call schedules a
+  // debounced flush so the partial scene survives a crash mid-generation.
+  // We also save immediately on completion. 800ms strikes a balance: fast
+  // enough that a crash loses ≤1 frame of progress, slow enough that
+  // back-to-back create_view emits coalesce into one disk write.
+  const saveSceneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const log = (line: string) => {
-    setLogLines((prev) => [...prev.slice(-99), line]);
+    setLogLines((prev) => [...prev.slice(-199), line]);
+  };
+
+  // Auto-scroll the log feed to the bottom whenever a new line lands —
+  // the panel is a "what's happening continuously" surface, so the
+  // freshest line should always be visible without the user scrolling.
+  useEffect(() => {
+    const el = logFeedRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logLines]);
+
+  const flushSaveScene = (scene: WhiteboardScene) => {
+    if (scene.elements.length === 0) return;
+    void host.saveScene(scene).catch(() => {
+      /* next streaming snapshot will retry */
+    });
+  };
+
+  const scheduleStreamingSave = (scene: WhiteboardScene) => {
+    if (saveSceneTimerRef.current) clearTimeout(saveSceneTimerRef.current);
+    saveSceneTimerRef.current = setTimeout(() => flushSaveScene(scene), 800);
   };
 
   const applyViewportToCanvas = (vp: WhiteboardViewport) => {
@@ -146,13 +169,11 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     sceneRef.current = next;
     setHasGenerated(true);
     if (apiRef.current) {
-      // Push the elements array onto the live Excalidraw scene. This
-      // is the streaming path: every create_view tool_use the agent
-      // emits triggers a fresh updateScene() call here, so the user
-      // watches the diagram build progressively rather than blink in
-      // at the end.
       apiRef.current.updateScene({ elements: next.elements });
     }
+    // Streaming auto-save: a crash mid-generation should never lose
+    // progress the user has already watched land on the canvas.
+    scheduleStreamingSave(next);
   };
 
   // Initial load — try host.loadScene(); auto-generate if absent.
@@ -160,10 +181,6 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        // Kick the viewport load in parallel with the scene load — they
-        // both come from the host's persistence layer and are
-        // independent. Whichever resolves first updates state; the
-        // canvas applies the viewport once the API is ready.
         const viewportPromise = host.loadViewport
           ? host.loadViewport().catch(() => null)
           : Promise.resolve(null);
@@ -175,17 +192,17 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         if (cancelled) return;
 
         if (persisted && persisted.scene.elements.length > 0) {
-          applySceneToCanvas(persisted.scene);
+          // Direct assign, not applySceneToCanvas — we don't want to
+          // re-save a scene we just loaded from disk.
+          sceneRef.current = persisted.scene;
+          setHasGenerated(true);
+          if (apiRef.current) {
+            apiRef.current.updateScene({ elements: persisted.scene.elements });
+          }
           if (persistedViewport) {
-            // Existing whiteboard with saved viewport — restore where
-            // the user left off, and DON'T auto-fit (user already
-            // chose this view).
             applyViewportToCanvas(persistedViewport);
             didAutoFitRef.current = true;
           } else {
-            // Existing whiteboard without saved viewport (first reopen
-            // since this feature shipped, or the viewport file got
-            // lost). Auto-fit once so the user lands on content.
             queueMicrotask(autoFitToContent);
           }
           setStatus('idle');
@@ -199,11 +216,13 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
           });
           if (cancelled) return;
           applySceneToCanvas(fresh);
+          // Cancel any pending streaming flush — we're about to fire
+          // the immediate completion save.
+          if (saveSceneTimerRef.current) {
+            clearTimeout(saveSceneTimerRef.current);
+            saveSceneTimerRef.current = null;
+          }
           await host.saveScene(fresh);
-          // First-ever generation for this paper — auto-scroll to the
-          // generated content so the user doesn't have to hunt for it.
-          // queueMicrotask gives Excalidraw one tick to finish laying
-          // the scene out before scrollToContent measures bboxes.
           queueMicrotask(autoFitToContent);
           setStatus('idle');
         } else {
@@ -221,6 +240,13 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         clearTimeout(saveViewportTimerRef.current);
         saveViewportTimerRef.current = null;
       }
+      if (saveSceneTimerRef.current) {
+        // Best-effort flush on unmount: if a save is pending, fire it
+        // synchronously rather than letting it cancel.
+        clearTimeout(saveSceneTimerRef.current);
+        saveSceneTimerRef.current = null;
+        flushSaveScene(sceneRef.current);
+      }
     };
   }, [host, autoGenerate]);
 
@@ -235,6 +261,10 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         onScene: applySceneToCanvas,
       });
       applySceneToCanvas(next);
+      if (saveSceneTimerRef.current) {
+        clearTimeout(saveSceneTimerRef.current);
+        saveSceneTimerRef.current = null;
+      }
       await host.saveScene(next);
       setStatus('idle');
     } catch (err) {
@@ -243,11 +273,6 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     }
   };
 
-  // Excalidraw fires onChange on EVERY interaction (pan, zoom, edit,
-  // selection, hover-over-tool). We only care about pan + zoom. The
-  // 250ms debounce + the viewport-equality check below mean we hit
-  // disk at most ~4 times/sec while the user is actively panning, and
-  // not at all while they're idle.
   const handleExcalidrawChange = (
     _elements: readonly unknown[],
     appState: ExcalidrawAppState,
@@ -257,28 +282,21 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     if (viewportEqual(lastSavedViewportRef.current, vp)) return;
     if (saveViewportTimerRef.current) clearTimeout(saveViewportTimerRef.current);
     saveViewportTimerRef.current = setTimeout(() => {
-      // Re-check at flush time in case the user resettled at the
-      // previously-saved viewport during the debounce window.
       if (viewportEqual(lastSavedViewportRef.current, vp)) return;
       lastSavedViewportRef.current = vp;
       void host.saveViewport!(vp).catch(() => {
-        /* swallow — next pan will retry */
+        /* next pan will retry */
       });
     }, 250);
   };
 
   const busy = status === 'generating' || status === 'refining';
+  const sidePanelWidth = panelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : SIDE_PANEL_WIDTH;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {/*
-          Excalidraw mounts immediately on first render so the
-          streaming path can call `apiRef.current.updateScene()` for
-          every partial scene snapshot. The empty `initialData` is
-          replaced live; we never re-mount the editor across the
-          generation.
-        */}
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%' }}>
+      {/* Left column: Excalidraw fills the remaining width. */}
+      <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
         <Excalidraw
           initialData={{
             elements: [] as never,
@@ -286,13 +304,9 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
           }}
           excalidrawAPI={(api) => {
             apiRef.current = api as unknown as ExcalidrawApi;
-            // If a load-from-disk scene came back before the API was
-            // ready, replay it now that we have the API.
             if (sceneRef.current.elements.length > 0) {
               apiRef.current.updateScene({ elements: sceneRef.current.elements });
             }
-            // Same for the viewport — if loadViewport resolved before
-            // the API was here, apply it now.
             if (pendingInitialViewportRef.current) {
               applyViewportToCanvas(pendingInitialViewportRef.current);
               pendingInitialViewportRef.current = null;
@@ -305,7 +319,7 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
             style={{
               position: 'absolute',
               top: 8,
-              right: 8,
+              left: 8,
               padding: '6px 10px',
               background: 'rgba(255,255,255,0.9)',
               border: '1px solid #ddd',
@@ -339,76 +353,173 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
           </div>
         )}
       </div>
+
+      {/* Right side panel — collapsible. Shows agent activity (log
+          stream) on top + chat input at the bottom. The user lives
+          here while the diagram builds; they pan/zoom on the canvas
+          and ask follow-ups in the panel. */}
       <div
         style={{
-          borderTop: '1px solid #e5e5e5',
-          padding: 8,
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
+          width: sidePanelWidth,
+          borderLeft: '1px solid #e5e5e5',
           background: '#fafafa',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          transition: 'width 180ms ease',
+          flexShrink: 0,
         }}
       >
-        <input
-          type="text"
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleChatSend();
-            }
-          }}
-          placeholder={
-            hasGenerated
-              ? 'Refine the whiteboard… (e.g. "add the loss equation", "zoom into cross-attention")'
-              : 'Whiteboard will be generated first…'
-          }
-          disabled={!hasGenerated || busy}
-          style={{
-            flex: 1,
-            padding: '8px 10px',
-            fontFamily: 'system-ui',
-            fontSize: 14,
-            border: '1px solid #ccc',
-            borderRadius: 4,
-          }}
-        />
-        <button
-          onClick={handleChatSend}
-          disabled={!hasGenerated || busy || !chatInput.trim()}
-          style={{
-            padding: '8px 14px',
-            fontFamily: 'system-ui',
-            fontSize: 14,
-            border: '1px solid #ccc',
-            borderRadius: 4,
-            background: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          Send
-        </button>
-      </div>
-      {logLines.length > 0 && (
-        <details style={{ borderTop: '1px solid #eee', padding: '4px 8px', background: '#fafafa' }}>
-          <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888', fontFamily: 'system-ui' }}>
-            Agent log ({logLines.length})
-          </summary>
-          <pre
+        {panelCollapsed ? (
+          <button
+            onClick={() => setPanelCollapsed(false)}
+            title="Show activity panel"
+            aria-label="Show activity panel"
             style={{
-              maxHeight: 120,
-              overflow: 'auto',
-              fontSize: 11,
-              fontFamily: 'ui-monospace, Menlo, monospace',
-              margin: 4,
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: 14,
               color: '#666',
+              fontFamily: 'system-ui',
+              writingMode: 'vertical-rl',
+              padding: '12px 0',
             }}
           >
-            {logLines.join('\n')}
-          </pre>
-        </details>
-      )}
+            ‹ Activity
+          </button>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 10px',
+                borderBottom: '1px solid #e5e5e5',
+                fontFamily: 'system-ui',
+                fontSize: 12,
+                color: '#666',
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>
+                {status === 'generating'
+                  ? 'Generating…'
+                  : status === 'refining'
+                  ? 'Refining…'
+                  : status === 'loading'
+                  ? 'Loading…'
+                  : status === 'error'
+                  ? 'Error'
+                  : 'Activity'}
+              </span>
+              <button
+                onClick={() => setPanelCollapsed(true)}
+                title="Collapse"
+                aria-label="Collapse activity panel"
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  color: '#666',
+                  padding: '0 4px',
+                }}
+              >
+                ›
+              </button>
+            </div>
+
+            {/* Log feed — auto-scrolling stream of agent activity
+                (assistant text, tool_use names, internal logs). */}
+            <div
+              ref={logFeedRef}
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '8px 10px',
+                fontFamily: 'ui-monospace, Menlo, monospace',
+                fontSize: 11,
+                color: '#444',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {logLines.length === 0 ? (
+                <div
+                  style={{
+                    color: '#999',
+                    fontFamily: 'system-ui',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {status === 'idle' && hasGenerated
+                    ? 'Whiteboard ready. Ask a follow-up below.'
+                    : 'Waiting for agent activity…'}
+                </div>
+              ) : (
+                logLines.map((line, i) => (
+                  <div key={i} style={{ marginBottom: 2 }}>
+                    {line}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div
+              style={{
+                borderTop: '1px solid #e5e5e5',
+                padding: 8,
+                display: 'flex',
+                gap: 6,
+                alignItems: 'center',
+                background: '#fff',
+              }}
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleChatSend();
+                  }
+                }}
+                placeholder={hasGenerated ? 'Refine the whiteboard…' : 'Generating…'}
+                disabled={!hasGenerated || busy}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontFamily: 'system-ui',
+                  fontSize: 13,
+                  border: '1px solid #ccc',
+                  borderRadius: 4,
+                  minWidth: 0,
+                }}
+              />
+              <button
+                onClick={handleChatSend}
+                disabled={!hasGenerated || busy || !chatInput.trim()}
+                style={{
+                  padding: '6px 10px',
+                  fontFamily: 'system-ui',
+                  fontSize: 13,
+                  border: '1px solid #ccc',
+                  borderRadius: 4,
+                  background: '#fff',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Send
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
