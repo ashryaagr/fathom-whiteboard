@@ -84,6 +84,16 @@ if (!existsSync(vendorNpmIgnore)) {
 }
 
 // 2. Patch main.ts so the listening line prints the actual port.
+// Tarball-installed consumers ship the pre-built dist/ but no src/ —
+// in that case the patch is irrelevant (binary already carries it).
+if (!existsSync(mainTsPath)) {
+  if (existsSync(distEntry)) {
+    log('vendor src/ not present; using pre-built dist (tarball install)');
+    process.exit(0);
+  }
+  log('vendor src/main.ts missing AND dist/index.js missing; cannot continue');
+  process.exit(1);
+}
 let mainSrc = readFileSync(mainTsPath, 'utf8');
 if (!mainSrc.includes(PATCH_MARKER)) {
   // Find the unmodified listen+log block and replace it. We match on
