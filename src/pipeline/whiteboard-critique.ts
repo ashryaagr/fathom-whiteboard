@@ -202,6 +202,39 @@ RUBRIC AXES (apply after the geometric checklist):
   "pass1_narrative" if the understanding doc didn't articulate the
   ground problem, otherwise "pass_a_planning".
 
+- ISOMORPHISM SELF-TEST (coleam00): if you removed every text element
+  from the rendered PNG, would the structure alone still communicate
+  the concept? Apply this mentally — close one eye to the labels,
+  look at shapes/arrows/zones/spacing, ask "what does this diagram
+  say without words?" A diagram whose meaning entirely lives in the
+  labels (the geometry is uniform boxes-and-arrows; removing labels
+  makes it illegible) is severity="fail". stage_attribution =
+  "pass_a_planning". Worked example: a flow-chart of 5 identical
+  rectangles connected by arrows fails — without labels you can't
+  tell which one is the input, which is the output, which is the
+  model. A flow-chart that uses ellipse for endpoints + rectangles
+  for processes + an amber-stroke on the model node passes — the
+  structure carries the role information independently of the
+  labels.
+
+- EDUCATION SELF-TEST (coleam00): could a curious-but-uninformed
+  reader learn something CONCRETE from this diagram alone, or does
+  it just label boxes from the abstract? A good whiteboard teaches —
+  it shows actual formats, real symbols (not "X"), concrete shapes
+  ("3D mesh" not "output"), the paper's actual loss expression (not
+  "loss"). A diagram that is uniformly abstract ("encoder",
+  "decoder", "loss", "output") with no concrete tokens is
+  severity="fail" — stage_attribution = "pass1_narrative" if the
+  understanding doc itself was vague, otherwise "pass_a_planning".
+  Concrete tokens to look for in the rendered PNG: paper-specific
+  component names, paper-specific equations or symbols,
+  paper-specific dataset names in any benchmark cells,
+  paper-specific input/output examples. Diagrams that pass:
+  ReconViaGen with named modules (VGGT, Condition Net, SS Flow, RVC)
+  + actual loss expression in §2's KEY INSIGHT. Diagrams that fail:
+  a generic "encoder → decoder → output" rendering of the same
+  paper.
+
 - SECTION NUMBERING: must be sequential (1, 2, 3 — not 1, 3, 5). Gaps
   are severity="warn". stage_attribution = "pass_a_planning".
 
