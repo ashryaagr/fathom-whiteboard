@@ -63,6 +63,26 @@ if (!existsSync(join(vendorDir, 'package.json'))) {
   ]);
 }
 
+// 1a. Drop a `.npmignore` inside the cloned vendor dir. Upstream's
+// `.gitignore` excludes `dist/`, which is correct for their git
+// history but wrong for our published tarball — we want consumers
+// to receive the pre-built MCP so they don't need a working clone +
+// build at install time. An empty `.npmignore` makes npm stop
+// consulting the sibling `.gitignore` for pack purposes; package.json
+// `files` remains the allowlist. Idempotent: only writes if missing.
+const vendorNpmIgnore = join(vendorDir, '.npmignore');
+if (!existsSync(vendorNpmIgnore)) {
+  writeFileSync(
+    vendorNpmIgnore,
+    '# Override upstream .gitignore for npm-pack purposes.\n' +
+      '# We ship the pre-built dist/ so consumers do not need to\n' +
+      '# re-clone and re-build at install time. Empty = "do not\n' +
+      '# exclude anything"; package.json `files` is the allowlist.\n',
+    'utf8',
+  );
+  log('wrote vendor/.npmignore to keep dist/ in publish tarball');
+}
+
 // 2. Patch main.ts so the listening line prints the actual port.
 let mainSrc = readFileSync(mainTsPath, 'utf8');
 if (!mainSrc.includes(PATCH_MARKER)) {

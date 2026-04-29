@@ -1,0 +1,10 @@
+# When `.npmignore` is present, npm stops consulting `.gitignore`
+# for pack exclusions. The `files` array in package.json is the
+# primary allowlist; this file just keeps npm from re-vetoing what
+# `files` already permits.
+#
+# Specifically: without this empty `.npmignore`, the root `.gitignore`'s
+# `vendor/` line drops the entire vendor tree from the tarball, even
+# though `vendor/excalidraw-mcp/dist/**` is in `files`. We ship the
+# pre-built MCP because consumer-side postinstall is fragile under
+# `--ignore-scripts`, offline mirrors, and corporate CI sandboxes.
