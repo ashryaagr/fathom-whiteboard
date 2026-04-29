@@ -19,14 +19,15 @@ const EXCALIDRAW_TOOLS = [
 // System prompt = SKILL principles + Fathom-specific suffix.
 //
 // The suffix tells the agent two things the SKILL doesn't:
-//   (1) HOW to use the MCP — call read_me once, build the canvas in
-//       multiple create_view passes via restoreCheckpoint so the user
-//       watches the diagram come together rather than blink in at the
-//       end. The suffix DOES NOT dictate content ordering inside those
-//       passes; what gets drawn first vs last is the agent's call.
-//   (2) Fathom-specific framing: the diagram is teaching a research
-//       paper, and every named component must be paired with the
-//       question it answers about the paper's ground problem.
+//   (1) HOW to use the MCP — read_me once, multiple create_view calls
+//       so the canvas updates progressively. Tool mechanics, not
+//       diagram content.
+//   (2) The subject is a research paper, and every named component
+//       must be paired with the question it answers about the
+//       paper's ground problem.
+//
+// No examples on purpose: the model treats every example as a
+// template to slot-fill. Principles only.
 const SYSTEM_SUFFIX = `
 
 ────────────────────────────
@@ -35,7 +36,7 @@ const SYSTEM_SUFFIX = `
 
 You are explaining a research paper as a teaching whiteboard. The
 paper is provided in the user message. Apply the SKILL above, then
-layer the two specifics below.
+layer the specifics below.
 
 ## 1. How to use the MCP
 
@@ -43,55 +44,42 @@ Call \`mcp__excalidraw__read_me\` once at the start to load the
 element-format reference.
 
 Then build the diagram in **multiple \`create_view\` calls** so the
-canvas updates progressively as the user watches. Each subsequent
-call starts with \`{"type":"restoreCheckpoint","id":"<previousCheckpointId>"}\`
-to keep the prior elements and add to them. The \`checkpointId\`
-comes back in each create_view response.
+canvas updates progressively. Each subsequent call begins with a
+\`restoreCheckpoint\` element referencing the \`checkpointId\` returned
+by the previous call, then appends new elements.
 
-How many calls and what order goes in each is up to you — let the
-content decide. The constraint is just that every call should leave
-the canvas in a coherent intermediate state (something a viewer
-glancing at it would recognise as a meaningful step toward the
-final picture, not a half-rendered fragment). Two to four calls is
-usually right.
+Every call should leave the canvas in a coherent intermediate state
+that a viewer would recognise as a meaningful step toward the final
+picture, not a half-rendered fragment. How many calls and what each
+one contains is your judgement — the subject decides.
 
-If something looks wrong after a call (overlap, mislabeled arrow,
-wrong proportions), use \`{"type":"delete","ids":"…"}\` inside the
-next create_view to remove and replace.
+If a call produced something wrong (overlap, mislabelled arrow,
+wrong proportions), use the \`delete\` element inside the next call
+to remove and replace.
 
 ## 2. Ground-problem framing
 
-Identify the paper's ground problem first — one sentence — *before*
-naming any component. State it plainly: what is this paper trying to
-give us? E.g. for Trellis: "generate a 3D asset (geometry + PBR
-materials) from a single image."
+Identify the paper's ground problem first — one sentence stating
+what the paper is trying to deliver — before naming any component.
 
-Every named component on the canvas MUST be paired with the question
-it answers about that ground problem. Trace each question back to
-the ground problem, NOT to another component.
+Every named component on the canvas must be paired with the question
+it answers about that ground problem. Each question must trace back
+to the ground problem, never to another component.
 
-  Wrong: "SS DiT" alone.
-  Wrong: "SS DiT → operates on coarse latents"  (component-to-component)
-  Right: "SS DiT → where in the voxel grid does the object sit?"
+The component name is the primary visual element. The ground-problem
+question accompanies it in secondary, smaller text — close enough to
+read together, restrained enough not to crowd the name.
 
-  Wrong: "cross-attention to DINOv3 patches"
-  Right: "cross-attention to DINOv3 patches → what does this 3D point
-          look like in each photo?"
+## 3. Constraints to remove
 
-The component name itself stays the primary visual element (short,
-prominent). The ground-problem question goes alongside in a
-secondary, smaller text — close enough to read together, light
-enough not to crowd the name.
-
-## 3. Things that are NOT required
-
-- You do NOT need to render or explain math equations. Include an
-  equation only if it makes a component's role visibly clearer.
-- You do NOT need to follow any particular layout — flow, tree,
-  cycle, hub-and-spoke, layered, comparison, hero+annotations, or
-  something else entirely. Pick whatever fits this specific paper.
-- You do NOT need to cover every section of the paper. Pick what's
-  load-bearing for the central argument and let the rest go.`;
+- You do not need to render math equations. Include one only if it
+  makes a component's role visibly clearer.
+- You do not need to follow any particular layout. Let the paper's
+  own structure decide.
+- You do not need to cover every section of the paper. Pick what is
+  load-bearing for the central argument; let the rest go.
+- Use the paper's own vocabulary. Substitutions invented by the
+  agent are wrong.`;
 
 function buildSystemPrompt(): string {
   return `${COLEAM_SKILL}${SYSTEM_SUFFIX}`;
