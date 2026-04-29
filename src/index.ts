@@ -20,4 +20,5 @@ export type {
   WhiteboardScene,
   GenerateCallbacks,
   PaperRef,
+  WhiteboardViewport,
 } from './types.js';

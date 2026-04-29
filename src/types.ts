@@ -33,6 +33,15 @@ export type PaperRef =
   | { kind: 'text'; markdown: string; title?: string }
   | { kind: 'path'; absPath: string; title?: string };
 
+// Excalidraw viewport state we persist so the user lands at the same
+// pan + zoom on reopen. zoom is the raw scalar (1 = 100%); scrollX
+// and scrollY are signed pixel offsets relative to scene origin.
+export type WhiteboardViewport = {
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+};
+
 // (McpConfig removed — pipeline now defaults to a per-call local spawn.
 // Advanced overrides go through the `mcpOverride` argument on
 // generateWhiteboard / refineWhiteboard, typed as `McpHandle` from
