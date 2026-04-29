@@ -8,16 +8,18 @@ import type { WhiteboardScene, WhiteboardViewport } from './types.js';
 export type WhiteboardHost = {
   loadScene: () => Promise<{ scene: WhiteboardScene; mtimeMs: number } | null>;
   saveScene: (scene: WhiteboardScene) => Promise<void>;
-  // Optional viewport persistence. If implemented, the component will
-  // restore the saved pan/zoom on mount and persist the viewport (with
-  // ~250ms debounce) as the user pans + zooms. Hosts that don't care
-  // about per-paper viewport memory can omit these.
   loadViewport?: () => Promise<WhiteboardViewport | null>;
   saveViewport?: (viewport: WhiteboardViewport) => Promise<void>;
-  generate: (cb: {
-    onLog?: (s: string) => void;
-    onScene?: (scene: WhiteboardScene) => void;
-  }) => Promise<{ scene: WhiteboardScene; usd: number }>;
+  // generate optionally accepts a `focus` string the user typed before
+  // kicking off generation. The host should thread it down to the
+  // pipeline so it appears in the system message.
+  generate: (
+    cb: {
+      onLog?: (s: string) => void;
+      onScene?: (scene: WhiteboardScene) => void;
+    },
+    focus?: string,
+  ) => Promise<{ scene: WhiteboardScene; usd: number }>;
   refine: (
     scene: WhiteboardScene,
     instruction: string,
@@ -31,11 +33,8 @@ export type WhiteboardHost = {
 
 type Props = {
   host: WhiteboardHost;
-  autoGenerate?: boolean;
 };
 
-// Minimal subset of @excalidraw/excalidraw's API we touch. Kept here so
-// we don't drag the editor's full type surface into our props.
 type ExcalidrawApi = {
   updateScene: (s: {
     elements?: readonly unknown[];
@@ -78,24 +77,28 @@ function viewportEqual(a: WhiteboardViewport | null, b: WhiteboardViewport): boo
 
 const SIDE_PANEL_WIDTH = 360;
 const SIDE_PANEL_COLLAPSED_WIDTH = 28;
+// 400ms debounce on every save path. Tight enough that a tab close /
+// crash loses ≤1 frame of pan, zoom, or edit; loose enough that a
+// burst of agent emits or rapid panning coalesces into a single write.
+const SAVE_DEBOUNCE_MS = 400;
 
-export function Whiteboard({ host, autoGenerate = true }: Props) {
-  // Mount Excalidraw on first render with an empty scene so we can
-  // call updateScene() the moment the agent emits its first
-  // create_view tool call. If we waited for `scene !== null`, the
-  // editor wouldn't be on the DOM during streaming and the user would
-  // stare at a placeholder for the whole generation.
+export function Whiteboard({ host }: Props) {
+  // 'awaiting-focus' = no scene on disk and we're letting the user
+  //                    type a focus prompt before kicking off generation.
+  // 'generating'      = pipeline is running.
+  // 'refining'        = chat-driven refine() is running.
+  // 'idle'            = scene on canvas, nothing in flight.
+  // 'loading'         = initial host.loadScene() in flight.
+  // 'error'           = surfaced with the message in errorMsg.
+  const [status, setStatus] = useState<
+    'loading' | 'awaiting-focus' | 'idle' | 'generating' | 'refining' | 'error'
+  >('loading');
   const [hasGenerated, setHasGenerated] = useState(false);
-  const [status, setStatus] = useState<'loading' | 'idle' | 'generating' | 'refining' | 'error'>(
-    'loading',
-  );
   const [logLines, setLogLines] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const apiRef = useRef<ExcalidrawApi | null>(null);
-  // Latest scene the agent emitted. We keep it in a ref because
-  // chat-refinement needs to send the current state synchronously.
   const sceneRef = useRef<WhiteboardScene>({ elements: [] });
   const logFeedRef = useRef<HTMLDivElement | null>(null);
 
@@ -105,20 +108,18 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
   const lastSavedViewportRef = useRef<WhiteboardViewport | null>(null);
   const saveViewportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Streaming auto-save plumbing. Every applySceneToCanvas call schedules a
-  // debounced flush so the partial scene survives a crash mid-generation.
-  // We also save immediately on completion. 800ms strikes a balance: fast
-  // enough that a crash loses ≤1 frame of progress, slow enough that
-  // back-to-back create_view emits coalesce into one disk write.
+  // Scene auto-save plumbing. Every Excalidraw onChange (whether
+  // triggered by a streaming agent emit OR by a user dragging a
+  // shape) schedules a debounced save. `canSaveRef` gates against
+  // saving the empty initial scene before we've loaded/generated
+  // anything.
   const saveSceneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canSaveRef = useRef(false);
 
   const log = (line: string) => {
     setLogLines((prev) => [...prev.slice(-199), line]);
   };
 
-  // Auto-scroll the log feed to the bottom whenever a new line lands —
-  // the panel is a "what's happening continuously" surface, so the
-  // freshest line should always be visible without the user scrolling.
   useEffect(() => {
     const el = logFeedRef.current;
     if (!el) return;
@@ -126,15 +127,19 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
   }, [logLines]);
 
   const flushSaveScene = (scene: WhiteboardScene) => {
+    if (!canSaveRef.current) return;
     if (scene.elements.length === 0) return;
     void host.saveScene(scene).catch(() => {
-      /* next streaming snapshot will retry */
+      /* next change will retry */
     });
   };
 
-  const scheduleStreamingSave = (scene: WhiteboardScene) => {
+  const scheduleSaveScene = (scene: WhiteboardScene) => {
     if (saveSceneTimerRef.current) clearTimeout(saveSceneTimerRef.current);
-    saveSceneTimerRef.current = setTimeout(() => flushSaveScene(scene), 800);
+    saveSceneTimerRef.current = setTimeout(
+      () => flushSaveScene(scene),
+      SAVE_DEBOUNCE_MS,
+    );
   };
 
   const applyViewportToCanvas = (vp: WhiteboardViewport) => {
@@ -165,18 +170,49 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     });
   };
 
+  // applySceneToCanvas — invoked by the streaming pipeline as the
+  // agent emits scenes. It updates the canvas; the resulting onChange
+  // will flow through handleExcalidrawChange and trigger a debounced
+  // scene save automatically.
   const applySceneToCanvas = (next: WhiteboardScene) => {
     sceneRef.current = next;
     setHasGenerated(true);
+    canSaveRef.current = true;
     if (apiRef.current) {
       apiRef.current.updateScene({ elements: next.elements });
     }
-    // Streaming auto-save: a crash mid-generation should never lose
-    // progress the user has already watched land on the canvas.
-    scheduleStreamingSave(next);
   };
 
-  // Initial load — try host.loadScene(); auto-generate if absent.
+  const startGeneration = async (focusText: string) => {
+    setStatus('generating');
+    try {
+      const { scene: fresh } = await host.generate(
+        {
+          onLog: log,
+          onScene: applySceneToCanvas,
+        },
+        focusText.trim() || undefined,
+      );
+      applySceneToCanvas(fresh);
+      // Flush any pending debounced save and force an immediate write
+      // of the final scene — closing the tab should never lose the
+      // last frame.
+      if (saveSceneTimerRef.current) {
+        clearTimeout(saveSceneTimerRef.current);
+        saveSceneTimerRef.current = null;
+      }
+      await host.saveScene(fresh);
+      queueMicrotask(autoFitToContent);
+      setStatus('idle');
+    } catch (err) {
+      setErrorMsg((err as Error).message);
+      setStatus('error');
+    }
+  };
+
+  // Initial load — try host.loadScene(); if absent, surface the focus
+  // prompt UI rather than auto-generating. The user gets to specify
+  // what the diagram should foreground before we burn the API spend.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -184,18 +220,15 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         const viewportPromise = host.loadViewport
           ? host.loadViewport().catch(() => null)
           : Promise.resolve(null);
-
         const persisted = await host.loadScene();
         if (cancelled) return;
-
         const persistedViewport = await viewportPromise;
         if (cancelled) return;
 
         if (persisted && persisted.scene.elements.length > 0) {
-          // Direct assign, not applySceneToCanvas — we don't want to
-          // re-save a scene we just loaded from disk.
           sceneRef.current = persisted.scene;
           setHasGenerated(true);
+          canSaveRef.current = true;
           if (apiRef.current) {
             apiRef.current.updateScene({ elements: persisted.scene.elements });
           }
@@ -208,26 +241,9 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
           setStatus('idle');
           return;
         }
-        if (autoGenerate) {
-          setStatus('generating');
-          const { scene: fresh } = await host.generate({
-            onLog: log,
-            onScene: applySceneToCanvas,
-          });
-          if (cancelled) return;
-          applySceneToCanvas(fresh);
-          // Cancel any pending streaming flush — we're about to fire
-          // the immediate completion save.
-          if (saveSceneTimerRef.current) {
-            clearTimeout(saveSceneTimerRef.current);
-            saveSceneTimerRef.current = null;
-          }
-          await host.saveScene(fresh);
-          queueMicrotask(autoFitToContent);
-          setStatus('idle');
-        } else {
-          setStatus('idle');
-        }
+        // No persisted scene → wait for the user to type a focus
+        // prompt and click Generate.
+        setStatus('awaiting-focus');
       } catch (err) {
         if (cancelled) return;
         setErrorMsg((err as Error).message);
@@ -242,21 +258,26 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
       }
       if (saveSceneTimerRef.current) {
         // Best-effort flush on unmount: if a save is pending, fire it
-        // synchronously rather than letting it cancel.
+        // synchronously so closing the tab doesn't lose the latest.
         clearTimeout(saveSceneTimerRef.current);
         saveSceneTimerRef.current = null;
         flushSaveScene(sceneRef.current);
       }
     };
-  }, [host, autoGenerate]);
+  }, [host]);
 
-  const handleChatSend = async () => {
-    const instruction = chatInput.trim();
-    if (!instruction || !hasGenerated) return;
+  const handleSendOrGenerate = async () => {
+    const text = chatInput.trim();
+    if (status === 'awaiting-focus') {
+      setChatInput('');
+      await startGeneration(text);
+      return;
+    }
+    if (!hasGenerated || !text) return;
     setChatInput('');
     setStatus('refining');
     try {
-      const { scene: next } = await host.refine(sceneRef.current, instruction, {
+      const { scene: next } = await host.refine(sceneRef.current, text, {
         onLog: log,
         onScene: applySceneToCanvas,
       });
@@ -273,29 +294,59 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     }
   };
 
+  // onChange fires for EVERY Excalidraw interaction — streaming
+  // updateScene, manual drag, undo/redo, pan, zoom. We auto-save the
+  // scene from here so user edits land on disk just like agent emits
+  // do. Viewport persistence shares the handler; both are debounced
+  // independently.
   const handleExcalidrawChange = (
-    _elements: readonly unknown[],
+    elements: readonly unknown[],
     appState: ExcalidrawAppState,
   ) => {
-    if (!host.saveViewport) return;
-    const vp = readViewport(appState);
-    if (viewportEqual(lastSavedViewportRef.current, vp)) return;
-    if (saveViewportTimerRef.current) clearTimeout(saveViewportTimerRef.current);
-    saveViewportTimerRef.current = setTimeout(() => {
-      if (viewportEqual(lastSavedViewportRef.current, vp)) return;
-      lastSavedViewportRef.current = vp;
-      void host.saveViewport!(vp).catch(() => {
-        /* next pan will retry */
-      });
-    }, 250);
+    // Mirror canonical state into sceneRef so chat refinement always
+    // sends what the user is actually looking at.
+    if (canSaveRef.current && elements.length > 0) {
+      const next = { elements: [...elements] as WhiteboardScene['elements'] };
+      sceneRef.current = next;
+      scheduleSaveScene(next);
+    }
+
+    if (host.saveViewport) {
+      const vp = readViewport(appState);
+      if (!viewportEqual(lastSavedViewportRef.current, vp)) {
+        if (saveViewportTimerRef.current) clearTimeout(saveViewportTimerRef.current);
+        saveViewportTimerRef.current = setTimeout(() => {
+          if (viewportEqual(lastSavedViewportRef.current, vp)) return;
+          lastSavedViewportRef.current = vp;
+          void host.saveViewport!(vp).catch(() => {});
+        }, 250);
+      }
+    }
   };
 
   const busy = status === 'generating' || status === 'refining';
   const sidePanelWidth = panelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : SIDE_PANEL_WIDTH;
 
+  // Input + button affordances depend on what the panel is asking
+  // for. Three modes: generation gate (awaiting-focus), refine
+  // (idle/post-generation), nothing-to-do (loading/error).
+  let inputPlaceholder = 'Generating…';
+  let buttonLabel = 'Send';
+  let inputDisabled = busy || status === 'loading' || status === 'error';
+  if (status === 'awaiting-focus') {
+    inputPlaceholder = 'What should the whiteboard focus on? (optional — Enter for general overview)';
+    buttonLabel = 'Generate';
+    inputDisabled = false;
+  } else if (status === 'idle' && hasGenerated) {
+    inputPlaceholder = 'Refine the whiteboard…';
+    buttonLabel = 'Send';
+  }
+  const sendDisabled =
+    inputDisabled ||
+    (status !== 'awaiting-focus' && (!hasGenerated || !chatInput.trim()));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%' }}>
-      {/* Left column: Excalidraw fills the remaining width. */}
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
         <Excalidraw
           initialData={{
@@ -332,6 +383,31 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
             {status === 'generating' ? 'Generating…' : 'Refining…'}
           </div>
         )}
+        {status === 'awaiting-focus' && (
+          // Subtle hint over the empty canvas — points the user at
+          // the side panel for the focus prompt rather than expecting
+          // them to find it.
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              fontFamily: 'system-ui',
+              color: '#999',
+              fontSize: 14,
+            }}
+          >
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>
+                No whiteboard yet
+              </div>
+              <div>Type a focus on the right (optional) and click Generate.</div>
+            </div>
+          </div>
+        )}
         {status === 'error' && (
           <div
             style={{
@@ -354,10 +430,6 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         )}
       </div>
 
-      {/* Right side panel — collapsible. Shows agent activity (log
-          stream) on top + chat input at the bottom. The user lives
-          here while the diagram builds; they pan/zoom on the canvas
-          and ask follow-ups in the panel. */}
       <div
         style={{
           width: sidePanelWidth,
@@ -411,6 +483,8 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
                   ? 'Refining…'
                   : status === 'loading'
                   ? 'Loading…'
+                  : status === 'awaiting-focus'
+                  ? 'Ready to generate'
                   : status === 'error'
                   ? 'Error'
                   : 'Activity'}
@@ -432,8 +506,6 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
               </button>
             </div>
 
-            {/* Log feed — auto-scrolling stream of agent activity
-                (assistant text, tool_use names, internal logs). */}
             <div
               ref={logFeedRef}
               style={{
@@ -455,7 +527,9 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
                     fontStyle: 'italic',
                   }}
                 >
-                  {status === 'idle' && hasGenerated
+                  {status === 'awaiting-focus'
+                    ? 'Type what you want the whiteboard to focus on (or leave blank), then click Generate.'
+                    : status === 'idle' && hasGenerated
                     ? 'Whiteboard ready. Ask a follow-up below.'
                     : 'Waiting for agent activity…'}
                 </div>
@@ -485,11 +559,12 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleChatSend();
+                    handleSendOrGenerate();
                   }
                 }}
-                placeholder={hasGenerated ? 'Refine the whiteboard…' : 'Generating…'}
-                disabled={!hasGenerated || busy}
+                placeholder={inputPlaceholder}
+                disabled={inputDisabled}
+                autoFocus={status === 'awaiting-focus'}
                 style={{
                   flex: 1,
                   padding: '6px 8px',
@@ -501,20 +576,21 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
                 }}
               />
               <button
-                onClick={handleChatSend}
-                disabled={!hasGenerated || busy || !chatInput.trim()}
+                onClick={handleSendOrGenerate}
+                disabled={sendDisabled}
                 style={{
                   padding: '6px 10px',
                   fontFamily: 'system-ui',
                   fontSize: 13,
                   border: '1px solid #ccc',
                   borderRadius: 4,
-                  background: '#fff',
+                  background: status === 'awaiting-focus' ? '#1d4ed8' : '#fff',
+                  color: status === 'awaiting-focus' ? '#fff' : '#000',
                   cursor: 'pointer',
                   flexShrink: 0,
                 }}
               >
-                Send
+                {buttonLabel}
               </button>
             </div>
           </>

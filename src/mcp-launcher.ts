@@ -53,6 +53,23 @@ function findVendorEntry(): string | null {
   return candidates.find(existsSync) ?? null;
 }
 
+// In an Electron app.asar bundle, files referenced via `app.asar/...`
+// paths can be read through Electron's fs hook but CANNOT be executed
+// by Node's `child_process.spawn` (the child process sees the real
+// disk, not the asar virtual filesystem). When `asarUnpack` puts the
+// vendor on real disk under `app.asar.unpacked/...`, swap the path
+// before spawning so the child has a real file to execute.
+function spawnPathFor(distPath: string): string {
+  const ASAR_TOKEN = '/app.asar/';
+  const idx = distPath.indexOf(ASAR_TOKEN);
+  if (idx < 0) return distPath;
+  return (
+    distPath.slice(0, idx) +
+    '/app.asar.unpacked/' +
+    distPath.slice(idx + ASAR_TOKEN.length)
+  );
+}
+
 export async function spawnLocalMcp(): Promise<McpHandle> {
   const distPath = findVendorEntry();
   if (!distPath) {
@@ -63,10 +80,18 @@ export async function spawnLocalMcp(): Promise<McpHandle> {
         'use https://mcp.excalidraw.com/mcp instead.',
     );
   }
+  const spawnTarget = spawnPathFor(distPath);
 
-  const proc = spawn(process.execPath, [distPath], {
+  const proc = spawn(process.execPath, [spawnTarget], {
     env: { ...process.env, PORT: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  // Surface ENOENT etc. immediately — without this the child's spawn
+  // failure surfaces only via the 10s timeout which is misleading.
+  let spawnErr: Error | null = null;
+  proc.on('error', (err) => {
+    spawnErr = err;
   });
 
   let stderrBuf = '';
@@ -78,9 +103,13 @@ export async function spawnLocalMcp(): Promise<McpHandle> {
     let resolved = false;
     const timer = setTimeout(() => {
       if (!resolved) {
+        const detail = spawnErr
+          ? ` spawnError: ${spawnErr.message};`
+          : '';
         rej(
           new Error(
-            `excalidraw-mcp did not print listening URL within 10s. ` +
+            `excalidraw-mcp did not print listening URL within 10s.${detail} ` +
+              `spawnTarget: ${spawnTarget} ` +
               `stderr: ${stderrBuf.slice(0, 500)}`,
           ),
         );

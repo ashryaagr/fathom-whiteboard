@@ -85,12 +85,18 @@ function buildSystemPrompt(): string {
   return `${COLEAM_SKILL}${SYSTEM_SUFFIX}`;
 }
 
-function buildUserMessage(paper: PaperRef, prompt?: string): string {
+function buildUserMessage(paper: PaperRef, prompt?: string, focus?: string): string {
   const titleLine = paper.title ? `# ${paper.title}\n\n` : '';
+  // When the user has supplied a focus, surface it prominently so the
+  // model treats it as the load-bearing instruction rather than a
+  // suggestion buried after the paper text.
+  const focusBlock = focus && focus.trim().length > 0
+    ? `## Focus for this whiteboard\n\n${focus.trim()}\n\nLet this focus drive the diagram's central argument and what gets foregrounded. Out-of-focus parts of the paper should fall away or sit on the periphery.\n\n`
+    : '';
   if (paper.kind === 'text') {
-    return `${titleLine}${paper.markdown}\n\n${prompt ?? 'Generate the teaching whiteboard now.'}`;
+    return `${titleLine}${paper.markdown}\n\n${focusBlock}${prompt ?? 'Generate the teaching whiteboard now.'}`;
   }
-  return `${titleLine}The paper is at: ${paper.absPath}\n\nRead it (you may use the Read tool), then generate the teaching whiteboard.\n\n${prompt ?? ''}`;
+  return `${titleLine}The paper is at: ${paper.absPath}\n\nRead it (you may use the Read tool), then generate the teaching whiteboard.\n\n${focusBlock}${prompt ?? ''}`;
 }
 
 // Extract the most recent valid scene from create_view tool inputs.
@@ -188,13 +194,14 @@ export async function generateWhiteboard(
   paper: PaperRef,
   cb?: GenerateCallbacks,
   mcpOverride?: McpOverride,
+  focus?: string,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
   try {
     const result = await runAgent({
       systemPrompt: buildSystemPrompt(),
-      userMessage: buildUserMessage(paper),
+      userMessage: buildUserMessage(paper, undefined, focus),
       mcpUrl: handle.url,
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
       cb,
