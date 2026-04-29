@@ -98,6 +98,7 @@ export function Whiteboard({ host }: Props) {
   const [chatInput, setChatInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
   const apiRef = useRef<ExcalidrawApi | null>(null);
   const sceneRef = useRef<WhiteboardScene>({ elements: [] });
   const logFeedRef = useRef<HTMLDivElement | null>(null);
@@ -125,6 +126,29 @@ export function Whiteboard({ host }: Props) {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [logLines]);
+
+  // Intercept Cmd/Ctrl+S in capture phase so Excalidraw's built-in
+  // 'Save to file' dialog never opens. Auto-save is already firing
+  // on every onChange; the keystroke just force-flushes any pending
+  // debounced write and surfaces a brief 'Saved' toast so the user
+  // gets the 'I hit save' acknowledgement they expected.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isSave = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
+      if (!isSave) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (saveSceneTimerRef.current) {
+        clearTimeout(saveSceneTimerRef.current);
+        saveSceneTimerRef.current = null;
+      }
+      flushSaveScene(sceneRef.current);
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 1200);
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [host]);
 
   const flushSaveScene = (scene: WhiteboardScene) => {
     if (!canSaveRef.current) return;
@@ -381,6 +405,26 @@ export function Whiteboard({ host }: Props) {
             }}
           >
             {status === 'generating' ? 'Generating…' : 'Refining…'}
+          </div>
+        )}
+        {savedToast && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '6px 12px',
+              background: 'rgba(30,30,30,0.85)',
+              color: '#fff',
+              borderRadius: 6,
+              fontSize: 12,
+              fontFamily: 'system-ui',
+              pointerEvents: 'none',
+              transition: 'opacity 200ms',
+            }}
+          >
+            Saved
           </div>
         )}
         {status === 'awaiting-focus' && (
