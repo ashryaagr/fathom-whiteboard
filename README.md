@@ -1,142 +1,149 @@
 # fathom-whiteboard
 
-Generate explanatory whiteboards from research papers using Claude. Pipeline + React UI + render harness, host-agnostic.
+Generate explanatory whiteboards from research papers using the Claude Agent SDK + the upstream `excalidraw-mcp` server + the `coleam00/excalidraw-diagram-skill` SKILL prompt.
 
-Extracted from [Fathom](https://github.com/ashryaagr/Fathom) (Phase 2, 2026-04-29). The whiteboard pipeline + React surface that lives inside Fathom now lives here as a standalone module that any host (Electron app, web app with a Node sidecar, CLI) can consume.
+A research paper goes in. A teaching whiteboard comes out. A chat input lets the user refine it.
 
-## Quickstart
+That's the whole thing.
 
-The package ships two entry points — a Node-side pipeline and a React-side renderer — and the host wires them together.
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Host app (Fathom, demo, anything)                        │
+│                                                          │
+│   <Whiteboard host={…} />          generateWhiteboard()  │
+│   ─ Excalidraw editor              ─ Claude Agent SDK    │
+│   ─ chat input                     ─ MCP HTTP transport  │
+│   ─ persistence via host           ─ system prompt =     │
+│                                       coleam SKILL.md +  │
+│                                       Fathom suffix      │
+│                                                          │
+└────────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+                ┌──────────────────────────┐
+                │ excalidraw-mcp           │
+                │ (hosted or local)        │
+                │  ─ read_me               │
+                │  ─ create_view           │
+                └──────────────────────────┘
+```
+
+Two MCP tools, two pipeline calls (`generateWhiteboard`, `refineWhiteboard`), one React component (`Whiteboard`). No templates, no Pass 1/2/2.5 split, no critic loop, no DSL, no ELK layout, no custom MCP wrapper.
+
+## Why this shape
+
+We tried the elaborate version first (multi-pass pipeline, custom MCP wrapper with 9 placement tools, template library, visual critic loop). A control experiment — vanilla Agent SDK + the unmodified upstream `excalidraw-mcp` + coleam's SKILL prompt — produced a tighter, more designed-feeling diagram on the same paper for a fraction of the code. So we threw out the elaborate version and aligned on the control.
+
+The pre-pivot code lives in `old/` (locally only — gitignored).
+
+## Install
+
+```bash
+npm install fathom-whiteboard
+# or, sibling-clone in a monorepo:
+# "fathom-whiteboard": "file:../fathom-whiteboard"
+```
+
+You will also need the Claude CLI installed and authenticated (`claude /login`). The SDK wraps the CLI.
+
+## Pipeline (Node)
 
 ```ts
-// Pipeline (Node) — produce a whiteboard JSON from a pre-built paper index.
-import {
-  runPass1, runPass2,
-  type PaperIndex,
-} from 'fathom-whiteboard/pipeline';
+import { generateWhiteboard, refineWhiteboard } from 'fathom-whiteboard';
 
-const paper: PaperIndex = {
-  paperHash: 'abc123',
-  indexPath: '/path/to/paper.lens',
-  readContent: () => readFile('/path/to/paper.lens/content.md', 'utf-8'),
-  readDigest: () => readFile('/path/to/paper.lens/digest.json', 'utf-8').catch(() => null),
-  resolveFigurePath: (rel) => '/path/to/paper.lens/' + rel,
-};
+const { scene, usd } = await generateWhiteboard(
+  { kind: 'text', markdown: paperMarkdown, title: 'ReconViaGen' },
+  {
+    onLog: (line) => console.log(line),
+    onSceneUpdate: (s) => console.log('scene now', s.elements.length, 'elements'),
+  },
+);
+// scene.elements is the Excalidraw elements array. Persist it however you like.
 
-const pass1 = await runPass1({
-  paperHash: paper.paperHash,
-  indexPath: paper.indexPath,
-  onProgress: (text) => process.stdout.write(text),
-  onArtifact: async ({ name, body }) => writeFile('/out/' + name, body),
-});
-
-const pass2 = await runPass2({
-  paperHash: paper.paperHash,
-  indexPath: paper.indexPath,
-  understanding: pass1.understanding,
-  renderRequest: 'Render the Level 1 diagram',
-  level: 1,
-  onArtifact: async ({ name, body }) => writeFile('/out/' + name, body),
-});
-// pass2.raw is the Excalidraw scene JSON.
+const { scene: refined } = await refineWhiteboard(
+  scene,
+  { kind: 'text', markdown: paperMarkdown, title: 'ReconViaGen' },
+  'Add the loss equation under the training loop',
+);
 ```
+
+The pipeline:
+
+1. Hands the SKILL.md prompt + Fathom suffix to Claude as the system prompt.
+2. Hands the paper as the user message.
+3. Connects an HTTP MCP transport to `excalidraw-mcp` (default: hosted at `https://mcp.excalidraw.com/mcp`).
+4. Allows exactly two tools — `mcp__excalidraw__read_me` and `mcp__excalidraw__create_view`.
+5. Captures the elements JSON from the last `create_view` call.
+
+`settingSources: []` is set so the pipeline ignores any `CLAUDE.md` / project / user config the host might have lying around — it runs with exactly the prompt we authored.
+
+## Renderer (React)
 
 ```tsx
-// Renderer (React) — drop the WhiteboardTab into any React tree.
-import {
-  WhiteboardTab, WhiteboardHostProvider,
-  type WhiteboardHost, type WhiteboardPaperRef,
-} from 'fathom-whiteboard/renderer';
+import { Whiteboard } from 'fathom-whiteboard';
+import type { WhiteboardHost } from 'fathom-whiteboard';
 
-const host: WhiteboardHost = createMyHost(/* IPC bridge or fetch client */);
-const paper: WhiteboardPaperRef = {
-  contentHash: 'abc123',
-  indexPath: '/path/to/paper.lens',
+const host: WhiteboardHost = {
+  loadScene: () => myIpc.invoke('whiteboard:get'),
+  saveScene: (scene) => myIpc.invoke('whiteboard:save', scene),
+  generate: (cb) => myIpc.streamingInvoke('whiteboard:generate', cb),
+  refine: (scene, instruction, cb) =>
+    myIpc.streamingInvoke('whiteboard:refine', { scene, instruction }, cb),
 };
 
-<WhiteboardHostProvider host={host}>
-  <WhiteboardTab paper={paper} />
-</WhiteboardHostProvider>
+<Whiteboard host={host} />
 ```
 
-## Pipeline API
+The component:
+- On mount, calls `host.loadScene()`. If a scene exists, displays it.
+- If none and `autoGenerate` (default true), calls `host.generate()` and persists the result via `host.saveScene()`.
+- The chat input at the bottom calls `host.refine(currentScene, instruction)` and persists the result.
 
-Node-side. Each function takes the paper context, runs Claude (via the Claude Agent SDK), and returns a result. Streaming + persistence flow through callbacks.
+The host is responsible for transporting the streaming events from your Node process to the renderer. In Electron, that's `ipcRenderer.invoke` + `webContents.send`; the Fathom integration uses the existing `runStreamingIpcHandler` helper for this.
 
-| Function | Purpose |
-| --- | --- |
-| `runPass1(args)` | Read the whole paper into Opus 4.7's 1M context, emit a markdown understanding doc. |
-| `runPass2(args)` | Single-shot Pass 2 — emit a Level 1 or Level 2 Excalidraw scene. |
-| `runPass2StepLoop(args)` | Pass 2 with per-step yields — drives the live-streaming canvas in the renderer. |
-| `runChatStepLoop(args)` | Chat-refinement turn — author a chat-frame on the existing canvas. |
-| `runCritique(args)` | Pass 2.5 visual critic — grades a rendered PNG, returns `{pass, defects, fixes}`. |
-| `runVerifier(args)` | Cross-checks Pass 1's quotes against the paper's `content.md`. |
-| `createWhiteboardMcpWithStateAccess(opts)` | MCP server factory (used internally by Pass 2; exposed for advanced hosts). |
-| `resolveClaudeExecutablePath()` | Best-effort lookup of the Claude CLI binary on disk. |
+## MCP server: hosted vs local
 
-**Persistence is host-supplied.** Pipeline functions accept `onArtifact?: (a: PipelineArtifact) => Promise<void>`. The pipeline never writes to disk; the host decides where output goes.
+By default the pipeline points at the hosted endpoint (`https://mcp.excalidraw.com/mcp`). This matches the control experiment that produced the design we're aligning to. Zero local build.
 
+To run locally instead:
+```bash
+cd vendor/excalidraw-mcp
+pnpm install && pnpm run build
+```
+Then in your code:
 ```ts
-// PipelineArtifact:
-{ type: 'understanding', name: 'whiteboard-understanding.md', body: string }
-{ type: 'issues',        name: 'whiteboard-issues.json',     body: string }
-{ type: 'render-snapshot', name: 'wb-postexport-...png',     body: Buffer }
+import { spawnLocalMcp } from 'fathom-whiteboard';
+const handle = await spawnLocalMcp();
+// pass { kind: 'local', spawn: () => Promise.resolve(handle) } to generateWhiteboard
 ```
 
-**Visual critique takes bytes, not paths.** `runCritique` accepts `pngBytes: Buffer`. Hosts that persist the PNG separately (for offline inspection) read the file → pass bytes; hosts that operate purely in-memory pass the buffer they just produced.
+`vendor/` is gitignored; it's a developer convenience, not a published artefact.
 
-## Renderer API
+## Cost
 
-React-side. The whole tree consumes a `WhiteboardHost` provided via `<WhiteboardHostProvider>`.
+The control experiment ran the ReconViaGen paper end-to-end for **~$0.95** in 3 turns. Refinement turns are cheaper (~$0.10–$0.30) because the paper is smaller per call.
 
-| Component | Purpose |
-| --- | --- |
-| `WhiteboardTab` | The full whiteboard surface — Excalidraw mount + breadcrumb + chat rail + regenerate controls. |
-| `WhiteboardChat` | The right rail — Pass 1/Pass 2 streaming display, then chat-refinement turns. |
-| `WhiteboardConsent` | Cost-disclosure gate before first generation. |
-| `WhiteboardRegenerateButton` | Top-right Regenerate + Clear controls. |
-| `WhiteboardBreadcrumb` | Inline breadcrumb for the L1/L2 zoom. |
+Standing user approval covers this for the Fathom whiteboard pipeline; document any new cost profile (different model, much larger paper) before first use.
 
-| Hook / Provider | Purpose |
-| --- | --- |
-| `WhiteboardHostProvider` | Inject a `WhiteboardHost` into the subtree. |
-| `useWhiteboardHost()` | Read the host inside any component. |
-| `useWhiteboardStore` | zustand store — `byPaper`, current focus, hydration. State only; the host owns I/O. |
+## Repo layout
 
-### `WhiteboardHost` interface
-
-The renderer↔host contract. 16 methods mirroring the Fathom IPC surface. Two kinds:
-
-- **RPC + per-call callbacks**: `generate(req, cb)`, `expand(req, cb)`, `chatSend(req, cb)`. Per-call lifecycle events (`onPass1Delta`, `onPass1Done`, etc.) flow through `cb`.
-- **Event-bus subscriptions**: `onSceneStream(cb)`, `onStep(cb)`, `onCriticVerdict(cb)`. App-wide notifications fired independent of any specific call. Each returns an unsubscribe fn.
-
-See [`src/renderer/host.tsx`](src/renderer/host.tsx) for the full type definition with per-callback shapes.
-
-## Two usage modes
-
-### 1. Node library (pipeline-only)
-
-For CI, batch-paper processing, or any non-interactive use. Import `fathom-whiteboard/pipeline`; supply `PaperIndex` + `onArtifact`; no renderer needed. The render harness in `scripts/` is still spawned by `runPass2` (the in-MCP visual critic uses it) — make sure the package's `scripts/` directory is on the filesystem next to your installed `node_modules/`.
-
-### 2. React component (host wraps both halves)
-
-For an interactive app. Implement `WhiteboardHost` (wrap your IPC / fetch layer); wrap your React tree in `<WhiteboardHostProvider>`; render `<WhiteboardTab>`. The host is responsible for:
-- Calling pipeline functions on the Node side when `host.generate(req, cb)` is invoked
-- Persisting `PipelineArtifact`s wherever they should live
-- Streaming pipeline events back through the per-call callbacks + the 3 lifecycle subscriptions
-
-See `examples/demo/` for a minimal Vite + Node sidecar skeleton.
-
-## See also
-
-- `examples/demo/` — minimal demo app skeleton (pipeline-only flow + React mount). Skeleton only; full implementation is Phase 2.5.
-- `docs/methodology.md` — how the pipeline works internally (Pass 1 / Pass 2 / Pass 2.5 / chat refinement, prompt strategies, cost estimates, failure modes).
-- [Fathom](https://github.com/ashryaagr/Fathom) — the original integration; reads as the canonical worked example of a `WhiteboardHost`.
+```
+src/
+  index.ts            re-exports the public surface
+  pipeline.ts         generateWhiteboard, refineWhiteboard
+  Whiteboard.tsx      React component + WhiteboardHost interface
+  mcp-launcher.ts     resolveHosted, spawnLocalMcp
+  skill.ts            COLEAM_SKILL constant (verbatim coleam SKILL.md)
+  SKILL.md            source-of-truth copy of the SKILL
+  types.ts            shared types
+docs/
+  methodology.md      how the pipeline works
+vendor/excalidraw-mcp gitignored; clone the upstream MCP server here for local mode
+old/                  pre-pivot code; gitignored, kept locally for reference
+```
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Contributing
-
-Phase 2 is the initial extraction; the package is private during stabilisation. Issues and PRs welcome once the demo (Phase 2.5) lands and the API stabilises.

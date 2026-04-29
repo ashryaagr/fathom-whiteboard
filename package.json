@@ -1,7 +1,7 @@
 {
   "name": "fathom-whiteboard",
-  "version": "0.0.1",
-  "description": "Generate explanatory whiteboards from research papers using Claude. Pipeline + React UI + render harness, host-agnostic.",
+  "version": "0.1.0",
+  "description": "Generate explanatory whiteboards from research papers using Claude + excalidraw-mcp + the coleam00 diagram SKILL.",
   "license": "MIT",
   "author": "Ashrya <ashryaagr@gmail.com>",
   "repository": {
@@ -10,43 +10,34 @@
   },
   "type": "module",
   "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    "./pipeline": {
-      "types": "./dist/pipeline/index.d.ts",
-      "import": "./dist/pipeline/index.js"
-    },
-    "./renderer": {
-      "types": "./dist/renderer/index.d.ts",
-      "import": "./dist/renderer/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "scripts",
-    "docs",
+    "src/SKILL.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "typecheck:pipeline": "tsc --noEmit -p tsconfig.pipeline.json",
-    "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",
-    "typecheck": "npm run typecheck:pipeline && npm run typecheck:renderer"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
     "@excalidraw/excalidraw": "^0.18.1",
-    "elkjs": "^0.10.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zod": "^3.23.8",
-    "zustand": "^5.0.12"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "esbuild": "^0.25.0",
-    "playwright": "^1.59.1",
     "typescript": "^5.6.3"
   },
   "peerDependencies": {

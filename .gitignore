@@ -8,3 +8,9 @@ dist/
 .idea/
 coverage/
 .tsbuildinfo
+
+# Pre-pivot code, kept locally for reference; not committed.
+old/
+
+# Vendored upstream MCP server (only needed if running locally instead of hosted endpoint).
+vendor/
