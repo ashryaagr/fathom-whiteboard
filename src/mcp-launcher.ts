@@ -82,13 +82,37 @@ export async function spawnLocalMcp(): Promise<McpHandle> {
   }
   const spawnTarget = spawnPathFor(distPath);
 
-  const proc = spawn(process.execPath, [spawnTarget], {
-    env: { ...process.env, PORT: '0' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // CRITICAL: when this code runs inside an Electron main process,
+  // process.execPath points at the Electron binary, not Node. Spawning
+  // Electron with a script argument launches it as a fresh Electron
+  // app (which then waits for app.whenReady, never prints "listening
+  // on", and times us out). ELECTRON_RUN_AS_NODE=1 makes Electron
+  // behave as a plain Node interpreter for that subprocess. Outside
+  // Electron the env var is ignored.
+  //
+  // We force cwd to the unpacked vendor dir's parent. If the parent
+  // process's cwd happens to be inside `app.asar` (Electron's asar
+  // hook makes the path *appear* to be a directory but spawn() goes
+  // through the real filesystem and sees it as a file → ENOTDIR),
+  // we must hand spawn a real directory.
+  const safeCwd = dirname(spawnTarget);
+  let proc;
+  try {
+    proc = spawn(process.execPath, [spawnTarget], {
+      cwd: safeCwd,
+      env: { ...process.env, PORT: '0', ELECTRON_RUN_AS_NODE: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    const e = err as Error & { code?: string; path?: string };
+    throw new Error(
+      `spawn threw synchronously: ${e.message} (code=${e.code ?? '?'}, path=${e.path ?? '?'}). ` +
+        `execPath=${process.execPath} spawnTarget=${spawnTarget} cwd=${safeCwd}`,
+    );
+  }
 
-  // Surface ENOENT etc. immediately — without this the child's spawn
-  // failure surfaces only via the 10s timeout which is misleading.
+  // Surface ENOENT/ENOTDIR etc. immediately — without this the child's
+  // spawn failure surfaces only via the 10s timeout which is misleading.
   let spawnErr: Error | null = null;
   proc.on('error', (err) => {
     spawnErr = err;
@@ -104,12 +128,14 @@ export async function spawnLocalMcp(): Promise<McpHandle> {
     const timer = setTimeout(() => {
       if (!resolved) {
         const detail = spawnErr
-          ? ` spawnError: ${spawnErr.message};`
+          ? ` spawnError: ${spawnErr.message} (code=${(spawnErr as NodeJS.ErrnoException).code ?? '?'}, path=${(spawnErr as NodeJS.ErrnoException).path ?? '?'});`
           : '';
         rej(
           new Error(
             `excalidraw-mcp did not print listening URL within 10s.${detail} ` +
-              `spawnTarget: ${spawnTarget} ` +
+              `execPath=${process.execPath} ` +
+              `spawnTarget=${spawnTarget} ` +
+              `cwd=${safeCwd} ` +
               `stderr: ${stderrBuf.slice(0, 500)}`,
           ),
         );

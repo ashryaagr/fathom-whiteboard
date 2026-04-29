@@ -1,4 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { existsSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { COLEAM_SKILL } from './skill.js';
 import {
   HOSTED_EXCALIDRAW_MCP_URL,
@@ -10,6 +12,24 @@ import type {
   PaperRef,
   WhiteboardScene,
 } from './types.js';
+
+// The Agent SDK spawns the `claude` binary as a subprocess. When this
+// pipeline runs inside an Electron main process whose cwd ends up as
+// an `app.asar` virtual path (Electron's hook reports it as a dir;
+// Node's actual posix_spawn syscall sees it as a file → ENOTDIR), the
+// whole pipeline collapses with a bare "spawn ENOTDIR" error before
+// any MCP tool fires. Picking a guaranteed-real directory side-steps
+// that. Homedir is always a real dir on macOS; outside macOS we still
+// prefer it over inheriting a possibly-asar cwd.
+function safeAgentCwd(): string {
+  const home = homedir();
+  try {
+    if (existsSync(home) && statSync(home).isDirectory()) return home;
+  } catch {
+    /* fall through */
+  }
+  return '/';
+}
 
 const EXCALIDRAW_TOOLS = [
   'mcp__excalidraw__read_me',
@@ -99,22 +119,92 @@ function buildUserMessage(paper: PaperRef, prompt?: string, focus?: string): str
   return `${titleLine}The paper is at: ${paper.absPath}\n\nRead it (you may use the Read tool), then generate the teaching whiteboard.\n\n${focusBlock}${prompt ?? ''}`;
 }
 
-// Extract the most recent valid scene from create_view tool inputs.
-// excalidraw-mcp's create_view takes elements as input; we capture them
-// as the agent calls it and use the latest call as the final scene.
-function tryExtractScene(input: unknown): WhiteboardScene | null {
+// Resolve a create_view tool input against the previous scene, mirroring
+// the vendor's checkpoint-resolve logic at
+// vendor/excalidraw-mcp/src/server.ts:454-482. The vendor's input schema
+// declares `elements: string` (JSON-encoded array). After the first call
+// the agent sends only a delta — a `restoreCheckpoint` element pointing
+// at the prior checkpointId, plus new elements (and possibly `delete`
+// elements). To keep the renderer in sync without an extra round-trip
+// to read_checkpoint, we apply the same merge here.
+//
+// Returns the new resolved scene, or null if the input can't be parsed.
+type ExcalidrawElement = WhiteboardScene['elements'][number];
+
+// Vendor MCP defines three "pseudo-elements" that are part of its wire
+// protocol but NOT real Excalidraw element types. Excalidraw's
+// updateScene rejects/ignores scenes containing them.
+//   - cameraUpdate: vendor uses this to animate its own canvas viewport
+//     (mcp-app.html). Required as the first element of every create_view
+//     per vendor's docs. Useless to our renderer.
+//   - restoreCheckpoint: vendor's delta-protocol marker pointing at a
+//     prior scene id. Resolved upstream in this function.
+//   - delete: vendor's deletion protocol. Resolved upstream too.
+const PSEUDO_ELEMENT_TYPES = new Set([
+  'cameraUpdate',
+  'restoreCheckpoint',
+  'delete',
+]);
+
+function isPseudoElement(el: unknown): boolean {
+  if (typeof el !== 'object' || el === null) return false;
+  const t = (el as Record<string, unknown>).type;
+  return typeof t === 'string' && PSEUDO_ELEMENT_TYPES.has(t);
+}
+
+function resolveSceneFromInput(
+  input: unknown,
+  prev: WhiteboardScene,
+): WhiteboardScene | null {
   if (!input || typeof input !== 'object') return null;
   const obj = input as Record<string, unknown>;
-  if (Array.isArray(obj.elements)) {
-    return { elements: obj.elements as WhiteboardScene['elements'] };
+  if (typeof obj.elements !== 'string') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(obj.elements);
+  } catch {
+    return null;
   }
-  if (obj.view && typeof obj.view === 'object') {
-    const v = obj.view as Record<string, unknown>;
-    if (Array.isArray(v.elements)) {
-      return { elements: v.elements as WhiteboardScene['elements'] };
+  if (!Array.isArray(parsed)) return null;
+
+  const restoreEl = parsed.find(
+    (el: unknown) =>
+      typeof el === 'object' &&
+      el !== null &&
+      (el as Record<string, unknown>).type === 'restoreCheckpoint',
+  );
+
+  if (restoreEl) {
+    // Delta call: gather deleteIds, filter prev, append new els.
+    const deleteIds = new Set<string>();
+    for (const el of parsed) {
+      const e = el as Record<string, unknown>;
+      if (e.type === 'delete') {
+        const ids = String(e.ids ?? e.id ?? '');
+        for (const id of ids.split(',')) {
+          const t = id.trim();
+          if (t) deleteIds.add(t);
+        }
+      }
     }
+    const baseFiltered = prev.elements.filter((el) => {
+      const e = el as Record<string, unknown>;
+      const id = typeof e.id === 'string' ? e.id : '';
+      const containerId =
+        typeof e.containerId === 'string' ? e.containerId : '';
+      return !deleteIds.has(id) && !deleteIds.has(containerId);
+    });
+    const newEls = parsed.filter(
+      (el: unknown) => !isPseudoElement(el),
+    ) as ExcalidrawElement[];
+    return { elements: [...baseFiltered, ...newEls] };
   }
-  return null;
+
+  // First call (or agent reset): take everything except pseudo-elements.
+  const elements = parsed.filter(
+    (el: unknown) => !isPseudoElement(el),
+  ) as ExcalidrawElement[];
+  return { elements };
 }
 
 // `mcpOverride` lets advanced consumers point the pipeline at a
@@ -132,9 +222,32 @@ async function runAgent(opts: {
   userMessage: string;
   mcpUrl: string;
   paperReadPath?: string; // when paper.kind === 'path', allow Read tool on it
+  // When the SDK runs inside an Electron app.asar bundle, its default
+  // resolution of the bundled `claude` binary path (via import.meta.url)
+  // points at `app.asar/.../claude`. asar's hook lets Electron Read that
+  // path, but child_process.spawn() goes through the real filesystem and
+  // sees `app.asar` as a FILE → ENOTDIR. Hosts that ship inside asar
+  // (Fathom) must pre-resolve the unpacked binary path and pass it here;
+  // standalone Node hosts (Slate dev, raw library users) leave it unset
+  // and the SDK default works.
+  pathToClaudeCodeExecutable?: string;
+  // Caller-supplied controller so the host can abort an in-flight run
+  // (e.g. the user types a new prompt and hits Send while a generation
+  // is still streaming). When the signal is aborted mid-stream the SDK
+  // raises an AbortError; we catch it, log `[aborted]`, and return what
+  // we have so far rather than propagating the throw.
+  abortController?: AbortController;
   cb?: GenerateCallbacks;
 }): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
-  const { systemPrompt, userMessage, mcpUrl, paperReadPath, cb } = opts;
+  const {
+    systemPrompt,
+    userMessage,
+    mcpUrl,
+    paperReadPath,
+    pathToClaudeCodeExecutable,
+    abortController,
+    cb,
+  } = opts;
 
   const allowedTools = paperReadPath
     ? [...EXCALIDRAW_TOOLS, 'Read']
@@ -143,16 +256,31 @@ async function runAgent(opts: {
   const stream = query({
     prompt: userMessage,
     options: {
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt },
+      // Plain-string system prompt (not the claude_code preset) — the
+      // preset adds 40+ builtin-tool descriptions, file-system orientation,
+      // and dynamic sections we don't want for a single-purpose
+      // diagram-generation agent. Pure SKILL + Fathom suffix only.
+      systemPrompt,
+      cwd: safeAgentCwd(),
       mcpServers: {
         excalidraw: { type: 'http', url: mcpUrl },
       },
       allowedTools,
+      // Disable the claude_code builtin-tool surface (Bash, Glob, Grep,
+      // WebSearch, ToolSearch, …). Without this the SDK defaults to the
+      // full preset, which costs an extra ToolSearch turn at session
+      // start and a per-turn input-token tax for unused tool descriptions.
+      // Read is the one builtin we keep when the paper is a file path.
+      tools: paperReadPath ? ['Read'] : [],
       // Disable host-side setting sources (CLAUDE.md, project config,
       // user config) so the pipeline runs with exactly the prompt we
       // authored, nothing else.
       settingSources: [],
       includePartialMessages: true,
+      ...(pathToClaudeCodeExecutable
+        ? { pathToClaudeCodeExecutable }
+        : {}),
+      ...(abortController ? { abortController } : {}),
     } as unknown as Parameters<typeof query>[0]['options'],
   });
 
@@ -160,6 +288,21 @@ async function runAgent(opts: {
   let turns = 0;
   let usd = 0;
 
+  // Truncate-then-stringify for log lines. Tool inputs and results are
+  // often large; we cap to keep the activity panel readable but still
+  // diagnostic. Renderer side can choose to render these collapsed.
+  const summarize = (val: unknown, max = 800): string => {
+    let s: string;
+    try {
+      s = typeof val === 'string' ? val : JSON.stringify(val);
+    } catch {
+      s = String(val);
+    }
+    if (s.length <= max) return s;
+    return `${s.slice(0, max)}… (+${s.length - max} chars)`;
+  };
+
+  try {
   for await (const ev of stream) {
     if (ev.type === 'assistant') {
       turns += 1;
@@ -170,21 +313,74 @@ async function runAgent(opts: {
           cb?.onAssistantText?.(block.text);
         } else if (block.type === 'tool_use') {
           const name = String(block.name ?? '');
+          const id = String(block.id ?? '');
           cb?.onToolUse?.(name, block.input);
-          cb?.onLog?.(`[tool_use] ${name}`);
+          cb?.onLog?.(`[tool_use] ${name} ${id ? `id=${id.slice(0, 8)} ` : ''}input=${summarize(block.input, 400)}`);
           if (name === 'mcp__excalidraw__create_view') {
-            const next = tryExtractScene(block.input);
-            if (next && next.elements.length > 0) {
+            const next = resolveSceneFromInput(block.input, scene);
+            // Empty scene is a meaningful resolved state — e.g. agent
+            // emits [restoreCheckpoint, delete every-id] to start over.
+            // Only `null` (parse failure) means "no signal."
+            if (next) {
               scene = next;
               cb?.onSceneUpdate?.(scene);
             }
           }
         }
       }
+    } else if (ev.type === 'user') {
+      // The Agent SDK threads tool_result blocks back as `user` messages
+      // — that's how the conversation loop closes. Surface them so the
+      // user sees the agent isn't "stuck" — read_me has actually returned.
+      const blocks = ((ev as { message?: { content?: unknown[] } }).message?.content ??
+        []) as Array<Record<string, unknown>>;
+      for (const block of blocks) {
+        if (block.type === 'tool_result') {
+          const id = String(block.tool_use_id ?? '').slice(0, 8);
+          const isErr = block.is_error === true;
+          const content = block.content;
+          let text: string;
+          if (typeof content === 'string') text = content;
+          else if (Array.isArray(content)) {
+            text = content
+              .map((c) => {
+                const cc = c as Record<string, unknown>;
+                return typeof cc.text === 'string' ? cc.text : JSON.stringify(cc);
+              })
+              .join('\n');
+          } else text = summarize(content);
+          cb?.onLog?.(
+            `[tool_result] ${id ? `id=${id} ` : ''}${isErr ? 'ERROR ' : ''}${summarize(text, 800)}`,
+          );
+        }
+      }
     } else if (ev.type === 'result') {
       usd = (ev as { total_cost_usd?: number }).total_cost_usd ?? 0;
       cb?.onLog?.(`[result] turns=${turns} usd=${usd.toFixed(4)}`);
+    } else if (ev.type === 'system') {
+      // System init events carry useful info (which tools registered,
+      // model, etc.). Surface a one-liner so the user sees the agent
+      // *started* even before the first tool_use lands.
+      const subtype = (ev as { subtype?: string }).subtype;
+      if (subtype === 'init') {
+        const tools = ((ev as { tools?: string[] }).tools ?? []).join(',');
+        const model = (ev as { model?: string }).model ?? '?';
+        cb?.onLog?.(`[system] init model=${model} tools=${tools}`);
+      }
     }
+  }
+  } catch (err) {
+    // AbortError — caller signalled the run should stop. Surface a
+    // clean log line and return whatever scene we have so far rather
+    // than rethrowing (which would force the host into the error
+    // branch). Any other error propagates normally.
+    const e = err as { name?: string; message?: string };
+    const aborted =
+      abortController?.signal.aborted ||
+      e?.name === 'AbortError' ||
+      /aborted|abort/i.test(e?.message ?? '');
+    if (!aborted) throw err;
+    cb?.onLog?.('[aborted] run cancelled by caller');
   }
 
   return { scene, turns, usd };
@@ -195,6 +391,8 @@ export async function generateWhiteboard(
   cb?: GenerateCallbacks,
   mcpOverride?: McpOverride,
   focus?: string,
+  pathToClaudeCodeExecutable?: string,
+  abortController?: AbortController,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
@@ -204,6 +402,8 @@ export async function generateWhiteboard(
       userMessage: buildUserMessage(paper, undefined, focus),
       mcpUrl: handle.url,
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
+      pathToClaudeCodeExecutable,
+      abortController,
       cb,
     });
     cb?.onDone?.(result);
@@ -224,6 +424,8 @@ export async function refineWhiteboard(
   userInstruction: string,
   cb?: GenerateCallbacks,
   mcpOverride?: McpOverride,
+  pathToClaudeCodeExecutable?: string,
+  abortController?: AbortController,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
@@ -241,6 +443,8 @@ export async function refineWhiteboard(
       userMessage,
       mcpUrl: handle.url,
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
+      pathToClaudeCodeExecutable,
+      abortController,
       cb,
     });
     cb?.onDone?.(result);

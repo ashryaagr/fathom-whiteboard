@@ -1,7 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, convertToExcalidrawElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import type { WhiteboardScene, WhiteboardViewport } from './types.js';
+
+// The agent's `create_view` tool input contains *Excalidraw element
+// skeletons* — partial specs (type, x, y, width, height, text, …)
+// missing the runtime-required fields (id, version, versionNonce,
+// seed, groupIds, roundness, isDeleted, …). Excalidraw's updateScene
+// silently rejects them; canvas stays empty.
+//
+// `convertToExcalidrawElements` is the official API for filling in
+// the defaults. The vendor's mcp-app does the same thing
+// (vendor/excalidraw-mcp/src/mcp-app.tsx:54). Using `regenerateIds:
+// false` keeps any ids the agent supplied so subsequent `delete`
+// elements in delta calls keep working.
+//
+// Idempotent on already-converted elements (no-op when the input
+// already has the runtime fields), so it's safe to apply at the
+// canvas boundary regardless of whether the elements came from the
+// agent or from disk.
+function fillSkeletonElements(
+  elements: WhiteboardScene['elements'],
+): WhiteboardScene['elements'] {
+  if (elements.length === 0) return elements;
+  return convertToExcalidrawElements(
+    elements as never,
+    { regenerateIds: false },
+  ) as WhiteboardScene['elements'];
+}
 
 // Host interface — the parent app (Fathom) implements these and hands them in.
 // Every method is per-call: no event subscriptions, no global stores.
@@ -10,15 +36,29 @@ export type WhiteboardHost = {
   saveScene: (scene: WhiteboardScene) => Promise<void>;
   loadViewport?: () => Promise<WhiteboardViewport | null>;
   saveViewport?: (viewport: WhiteboardViewport) => Promise<void>;
+  // Optional. When implemented, paste of images/PDFs/files into the
+  // chat input writes bytes to host-managed disk and returns an
+  // absolute path. Hosts that haven't wired this yet should leave it
+  // unset; paste of files will then be silently ignored.
+  saveAsset?: (
+    filename: string,
+    bytes: ArrayBuffer,
+  ) => Promise<{ absPath: string }>;
   // generate optionally accepts a `focus` string the user typed before
   // kicking off generation. The host should thread it down to the
   // pipeline so it appears in the system message.
+  //
+  // The optional `abortController`, when supplied, lets the user
+  // cancel the in-flight run mid-stream (e.g. by typing a new prompt
+  // and pressing Send). Hosts that don't support cancellation can
+  // ignore it; the run will simply finish on its own.
   generate: (
     cb: {
       onLog?: (s: string) => void;
       onScene?: (scene: WhiteboardScene) => void;
     },
     focus?: string,
+    abortController?: AbortController,
   ) => Promise<{ scene: WhiteboardScene; usd: number }>;
   refine: (
     scene: WhiteboardScene,
@@ -27,9 +67,30 @@ export type WhiteboardHost = {
       onLog?: (s: string) => void;
       onScene?: (scene: WhiteboardScene) => void;
     },
+    abortController?: AbortController,
   ) => Promise<{ scene: WhiteboardScene; usd: number }>;
   clear?: () => Promise<void>;
 };
+
+type Attachment = {
+  name: string;
+  absPath: string;
+  kind: 'image' | 'file';
+};
+
+// Build the markdown prefix for a list of attachments. Image kind
+// uses `![…](…)` so the agent's Read tool reads it as visual; file
+// kind uses `[…](…)`. A single newline between attachments, blank
+// line before the user's text.
+function buildAttachmentPrefix(atts: Attachment[]): string {
+  if (atts.length === 0) return '';
+  const lines = atts.map((a) =>
+    a.kind === 'image'
+      ? `![attached image: ${a.name}](${a.absPath})`
+      : `[attached file: ${a.name}](${a.absPath})`,
+  );
+  return `${lines.join('\n')}\n\n`;
+}
 
 type Props = {
   host: WhiteboardHost;
@@ -123,6 +184,60 @@ function StatusDot({ status }: { status: string }) {
 // burst of agent emits or rapid panning coalesces into a single write.
 const SAVE_DEBOUNCE_MS = 400;
 
+// Long log lines (tool inputs + results) get collapsed under a one-line
+// preview. <details> is keyboard-accessible and copy-friendly for free.
+const LOG_PREVIEW_CHARS = 120;
+
+function LogLine({ line, isLatest }: { line: string; isLatest: boolean }) {
+  const isMono =
+    line.startsWith('[tool_use]') ||
+    line.startsWith('[tool_result]') ||
+    line.startsWith('[result]') ||
+    line.startsWith('[system]');
+  const baseStyle: React.CSSProperties = {
+    marginBottom: 3,
+    color: isLatest ? '#1d1d1f' : '#3a3a3c',
+    fontFamily: isMono
+      ? "ui-monospace, 'SF Mono', Menlo, monospace"
+      : 'inherit',
+    fontSize: isMono ? 11 : 12,
+  };
+  if (line.length <= LOG_PREVIEW_CHARS) {
+    return <div style={baseStyle}>{line}</div>;
+  }
+  const preview = `${line.slice(0, LOG_PREVIEW_CHARS)}…`;
+  return (
+    <details style={{ ...baseStyle, whiteSpace: 'pre-wrap' }}>
+      <summary
+        style={{
+          cursor: 'pointer',
+          listStyle: 'none',
+          color: isLatest ? '#1d1d1f' : '#3a3a3c',
+          // Hide the default disclosure triangle in Safari/WebKit by
+          // suppressing the marker; we use the ▸ glyph below instead.
+          // Subtle and consistent with Apple's expand affordances.
+        }}
+      >
+        <span style={{ color: '#86868b', marginRight: 4 }}>▸</span>
+        {preview}
+      </summary>
+      <div
+        style={{
+          paddingLeft: 14,
+          marginTop: 4,
+          color: '#3a3a3c',
+          fontSize: isMono ? 11 : 12,
+          fontFamily: isMono
+            ? "ui-monospace, 'SF Mono', Menlo, monospace"
+            : 'inherit',
+        }}
+      >
+        {line}
+      </div>
+    </details>
+  );
+}
+
 export function Whiteboard({ host }: Props) {
   // 'awaiting-focus' = no scene on disk and we're letting the user
   //                    type a focus prompt before kicking off generation.
@@ -137,9 +252,14 @@ export function Whiteboard({ host }: Props) {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  // Controller for the in-flight generate/refine run. When the user
+  // sends a new prompt while a run is streaming we abort this and
+  // start a fresh one (ChatGPT/Claude UX).
+  const runControllerRef = useRef<AbortController | null>(null);
   const apiRef = useRef<ExcalidrawApi | null>(null);
   const sceneRef = useRef<WhiteboardScene>({ elements: [] });
   const logFeedRef = useRef<HTMLDivElement | null>(null);
@@ -239,16 +359,38 @@ export function Whiteboard({ host }: Props) {
   // agent emits scenes. It updates the canvas; the resulting onChange
   // will flow through handleExcalidrawChange and trigger a debounced
   // scene save automatically.
+  //
+  // The agent's elements are skeleton specs; fill in defaults via
+  // `fillSkeletonElements` before handing to Excalidraw (otherwise
+  // updateScene silently no-ops). Store the FILLED form in sceneRef
+  // so the disk save round-trips a fully-formed scene that re-opens
+  // correctly without needing another conversion.
   const applySceneToCanvas = (next: WhiteboardScene) => {
-    sceneRef.current = next;
+    const filled: WhiteboardScene = {
+      elements: fillSkeletonElements(next.elements),
+    };
+    sceneRef.current = filled;
     setHasGenerated(true);
     canSaveRef.current = true;
     if (apiRef.current) {
-      apiRef.current.updateScene({ elements: next.elements });
+      apiRef.current.updateScene({ elements: filled.elements });
     }
   };
 
+  // Abort any in-flight run. Called when the user submits a new
+  // prompt while the previous one is still streaming.
+  const abortInflightRun = () => {
+    const ctrl = runControllerRef.current;
+    if (ctrl && !ctrl.signal.aborted) {
+      ctrl.abort();
+    }
+    runControllerRef.current = null;
+  };
+
   const startGeneration = async (focusText: string) => {
+    abortInflightRun();
+    const controller = new AbortController();
+    runControllerRef.current = controller;
     setStatus('generating');
     try {
       const { scene: fresh } = await host.generate(
@@ -257,7 +399,11 @@ export function Whiteboard({ host }: Props) {
           onScene: applySceneToCanvas,
         },
         focusText.trim() || undefined,
+        controller,
       );
+      // If we were superseded by a newer run, drop our result on the
+      // floor — the newer run owns the canvas now.
+      if (runControllerRef.current !== controller) return;
       applySceneToCanvas(fresh);
       // Flush any pending debounced save and force an immediate write
       // of the final scene — closing the tab should never lose the
@@ -269,9 +415,12 @@ export function Whiteboard({ host }: Props) {
       await host.saveScene(fresh);
       queueMicrotask(autoFitToContent);
       setStatus('idle');
+      runControllerRef.current = null;
     } catch (err) {
+      if (runControllerRef.current !== controller) return;
       setErrorMsg((err as Error).message);
       setStatus('error');
+      runControllerRef.current = null;
     }
   };
 
@@ -291,11 +440,17 @@ export function Whiteboard({ host }: Props) {
         if (cancelled) return;
 
         if (persisted && persisted.scene.elements.length > 0) {
-          sceneRef.current = persisted.scene;
+          // Defensive convert: scenes saved before the
+          // fillSkeletonElements fix may still be in skeleton form on
+          // disk. Idempotent on already-converted scenes.
+          const filled: WhiteboardScene = {
+            elements: fillSkeletonElements(persisted.scene.elements),
+          };
+          sceneRef.current = filled;
           setHasGenerated(true);
           canSaveRef.current = true;
           if (apiRef.current) {
-            apiRef.current.updateScene({ elements: persisted.scene.elements });
+            apiRef.current.updateScene({ elements: filled.elements });
           }
           if (persistedViewport) {
             applyViewportToCanvas(persistedViewport);
@@ -333,19 +488,38 @@ export function Whiteboard({ host }: Props) {
 
   const handleSendOrGenerate = async () => {
     const text = chatInput.trim();
+    const prefix = buildAttachmentPrefix(attachments);
+    const composed = (prefix + text).trim();
+
     if (status === 'awaiting-focus') {
       setChatInput('');
-      await startGeneration(text);
+      setAttachments([]);
+      await startGeneration(composed);
       return;
     }
-    if (!hasGenerated || !text) return;
+    // Allow Send during a run (busy) by aborting the in-flight one
+    // and starting a fresh refine. `hasGenerated` gate still applies —
+    // a Send with no scene yet falls through to startGeneration above.
+    if (!hasGenerated) return;
+    if (!composed) return;
+
+    abortInflightRun();
+    const controller = new AbortController();
+    runControllerRef.current = controller;
     setChatInput('');
+    setAttachments([]);
     setStatus('refining');
     try {
-      const { scene: next } = await host.refine(sceneRef.current, text, {
-        onLog: log,
-        onScene: applySceneToCanvas,
-      });
+      const { scene: next } = await host.refine(
+        sceneRef.current,
+        composed,
+        {
+          onLog: log,
+          onScene: applySceneToCanvas,
+        },
+        controller,
+      );
+      if (runControllerRef.current !== controller) return;
       applySceneToCanvas(next);
       if (saveSceneTimerRef.current) {
         clearTimeout(saveSceneTimerRef.current);
@@ -353,10 +527,58 @@ export function Whiteboard({ host }: Props) {
       }
       await host.saveScene(next);
       setStatus('idle');
+      runControllerRef.current = null;
     } catch (err) {
+      if (runControllerRef.current !== controller) return;
       setErrorMsg((err as Error).message);
       setStatus('error');
+      runControllerRef.current = null;
     }
+  };
+
+  // Paste handler — scan clipboard for files (images, PDFs, anything)
+  // and persist each via host.saveAsset. On success, surface a chip
+  // above the textarea. Text paste falls through to default behaviour.
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const files: File[] = [];
+    if (dt.files && dt.files.length > 0) {
+      for (let i = 0; i < dt.files.length; i++) files.push(dt.files[i]);
+    } else if (dt.items && dt.items.length > 0) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+    if (files.length === 0) return;
+    if (!host.saveAsset) return; // host hasn't wired persistence yet
+    e.preventDefault();
+    const saved: Attachment[] = [];
+    for (const f of files) {
+      try {
+        const bytes = await f.arrayBuffer();
+        const filename = f.name && f.name.length > 0 ? f.name : `attachment-${Date.now()}`;
+        const { absPath } = await host.saveAsset(filename, bytes);
+        const isImage =
+          f.type.startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename);
+        saved.push({ name: filename, absPath, kind: isImage ? 'image' : 'file' });
+      } catch {
+        // Best-effort — drop a single bad file rather than blocking
+        // the whole paste. Other attachments still go through.
+      }
+    }
+    if (saved.length > 0) {
+      setAttachments((prev) => [...prev, ...saved]);
+    }
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // onChange fires for EVERY Excalidraw interaction — streaming
@@ -392,23 +614,28 @@ export function Whiteboard({ host }: Props) {
   const busy = status === 'generating' || status === 'refining';
   const sidePanelWidth = panelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : SIDE_PANEL_WIDTH;
 
-  // Input + button affordances depend on what the panel is asking
-  // for. Three modes: generation gate (awaiting-focus), refine
-  // (idle/post-generation), nothing-to-do (loading/error).
-  let inputPlaceholder = 'Generating…';
+  // Input + button affordances. Typing is ALWAYS enabled — even mid
+  // run — so the user can compose a follow-up while the agent is
+  // streaming. Submitting while busy aborts the in-flight run and
+  // starts a fresh one.
+  let inputPlaceholder = 'Refine the whiteboard…';
   let buttonLabel = 'Send';
-  let inputDisabled = busy || status === 'loading' || status === 'error';
   if (status === 'awaiting-focus') {
     inputPlaceholder = 'What should the whiteboard focus on? (optional — Enter for general overview)';
     buttonLabel = 'Generate';
-    inputDisabled = false;
-  } else if (status === 'idle' && hasGenerated) {
+  } else if (busy) {
+    inputPlaceholder = 'Type a follow-up — Send aborts current run';
+  } else if (status === 'loading') {
+    inputPlaceholder = 'Loading…';
+  } else if (status === 'error') {
     inputPlaceholder = 'Refine the whiteboard…';
-    buttonLabel = 'Send';
   }
+  const hasContent = chatInput.trim().length > 0 || attachments.length > 0;
+  // Send is disabled only when there is nothing to send. Loading/error
+  // states still gate via hasGenerated/hasContent.
   const sendDisabled =
-    inputDisabled ||
-    (status !== 'awaiting-focus' && (!hasGenerated || !chatInput.trim()));
+    status === 'loading' ||
+    (status === 'awaiting-focus' ? false : !hasGenerated || !hasContent);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%' }}>
@@ -643,25 +870,11 @@ export function Whiteboard({ host }: Props) {
                 </div>
               ) : (
                 logLines.map((line, i) => (
-                  <div
+                  <LogLine
                     key={i}
-                    style={{
-                      marginBottom: 3,
-                      // Slight emphasis on the freshest line for
-                      // readability without making older lines noise.
-                      color: i === logLines.length - 1 ? '#1d1d1f' : '#3a3a3c',
-                      fontFamily:
-                        line.startsWith('[tool_use]') || line.startsWith('[result]')
-                          ? "ui-monospace, 'SF Mono', Menlo, monospace"
-                          : 'inherit',
-                      fontSize:
-                        line.startsWith('[tool_use]') || line.startsWith('[result]')
-                          ? 11
-                          : 12,
-                    }}
-                  >
-                    {line}
-                  </div>
+                    line={line}
+                    isLatest={i === logLines.length - 1}
+                  />
                 ))
               )}
             </div>
@@ -671,77 +884,163 @@ export function Whiteboard({ host }: Props) {
                 borderTop: '1px solid rgba(0,0,0,0.06)',
                 padding: '10px 12px 12px',
                 display: 'flex',
+                flexDirection: 'column',
                 gap: 8,
-                alignItems: 'center',
                 background: 'rgba(255,255,255,0.55)',
               }}
             >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendOrGenerate();
-                  }
-                }}
-                placeholder={inputPlaceholder}
-                disabled={inputDisabled}
-                autoFocus={status === 'awaiting-focus'}
-                style={{
-                  flex: 1,
-                  padding: '8px 12px',
-                  fontFamily: 'inherit',
-                  fontSize: 13,
-                  color: '#1d1d1f',
-                  background: 'rgba(255,255,255,0.9)',
-                  border: '1px solid rgba(0,0,0,0.10)',
-                  borderRadius: 9,
-                  outline: 'none',
-                  minWidth: 0,
-                  transition: 'border-color 120ms ease, box-shadow 120ms ease',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(10,132,255,0.5)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(10,132,255,0.18)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              />
-              <button
-                onClick={handleSendOrGenerate}
-                disabled={sendDisabled}
-                style={{
-                  padding: '8px 14px',
-                  fontFamily: 'inherit',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  letterSpacing: '-0.005em',
-                  background: sendDisabled
-                    ? 'rgba(10,132,255,0.3)'
-                    : '#0a84ff',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 9,
-                  cursor: sendDisabled ? 'default' : 'pointer',
-                  flexShrink: 0,
-                  transition: 'background 120ms ease, transform 80ms ease',
-                }}
-                onMouseDown={(e) => {
-                  if (!sendDisabled) e.currentTarget.style.transform = 'scale(0.97)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              >
-                {buttonLabel}
-              </button>
+              {attachments.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                  }}
+                >
+                  {attachments.map((a, i) => (
+                    <span
+                      key={`${a.absPath}-${i}`}
+                      title={a.absPath}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '4px 8px',
+                        fontSize: 12,
+                        color: '#1d1d1f',
+                        background: 'rgba(10,132,255,0.10)',
+                        border: '1px solid rgba(10,132,255,0.25)',
+                        borderRadius: 7,
+                        maxWidth: 200,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          opacity: 0.7,
+                          fontSize: 10,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        {a.kind === 'image' ? 'IMG' : 'FILE'}
+                      </span>
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {a.name}
+                      </span>
+                      <button
+                        onClick={() => removeAttachment(i)}
+                        aria-label={`Remove attachment ${a.name}`}
+                        title="Remove"
+                        style={{
+                          marginLeft: 2,
+                          padding: 0,
+                          width: 16,
+                          height: 16,
+                          fontSize: 13,
+                          lineHeight: '13px',
+                          color: '#1d1d1f',
+                          background: 'transparent',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          opacity: 0.55,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.55')}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendOrGenerate();
+                    }
+                  }}
+                  onPaste={handlePaste}
+                  placeholder={inputPlaceholder}
+                  rows={1}
+                  autoFocus={status === 'awaiting-focus'}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    color: '#1d1d1f',
+                    background: 'rgba(255,255,255,0.9)',
+                    border: '1px solid rgba(0,0,0,0.10)',
+                    borderRadius: 9,
+                    outline: 'none',
+                    minWidth: 0,
+                    minHeight: 34,
+                    maxHeight: 144,
+                    resize: 'none',
+                    overflowY: 'auto',
+                    transition: 'border-color 120ms ease, box-shadow 120ms ease',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(10,132,255,0.5)';
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(10,132,255,0.18)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                  onInput={(e) => {
+                    // Autogrow: reset height, then snap to scrollHeight
+                    // capped by CSS maxHeight. Pure DOM, no extra state.
+                    const ta = e.currentTarget;
+                    ta.style.height = 'auto';
+                    ta.style.height = `${Math.min(ta.scrollHeight, 144)}px`;
+                  }}
+                />
+                <button
+                  onClick={handleSendOrGenerate}
+                  disabled={sendDisabled}
+                  style={{
+                    padding: '8px 14px',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    letterSpacing: '-0.005em',
+                    background: sendDisabled
+                      ? 'rgba(10,132,255,0.3)'
+                      : '#0a84ff',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 9,
+                    cursor: sendDisabled ? 'default' : 'pointer',
+                    flexShrink: 0,
+                    transition: 'background 120ms ease, transform 80ms ease',
+                  }}
+                  onMouseDown={(e) => {
+                    if (!sendDisabled) e.currentTarget.style.transform = 'scale(0.97)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                >
+                  {buttonLabel}
+                </button>
+              </div>
             </div>
           </>
         )}

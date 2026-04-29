@@ -14,3 +14,7 @@ old/
 
 # Vendored upstream MCP server (only needed if running locally instead of hosted endpoint).
 vendor/
+
+# electron-builder output (Mac app bundles, blockmaps, etc.). The lib's
+# `dist/` lives at the repo root; we keep them separate.
+release/

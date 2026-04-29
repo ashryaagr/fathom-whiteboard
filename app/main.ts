@@ -190,7 +190,8 @@ async function runStreamingGenerate(
   event: IpcMainInvokeEvent,
   channel: string,
   paper: PaperRef,
-  focus?: string,
+  focus: string | undefined,
+  abortController: AbortController,
 ) {
   const sender = event.sender;
   try {
@@ -210,6 +211,8 @@ async function runStreamingGenerate(
       },
       undefined,
       focus,
+      undefined,
+      abortController,
     );
     if (!sender.isDestroyed())
       sender.send(channel, {
@@ -238,9 +241,13 @@ ipcMain.handle(
     const channel = `generate:event:${randomBytes(4).toString('hex')}`;
     const ctrl = new AbortController();
     activeRuns.set(channel, ctrl);
-    void runStreamingGenerate(event, channel, buildPaperRef(req.paper), req.focus).finally(
-      () => activeRuns.delete(channel),
-    );
+    void runStreamingGenerate(
+      event,
+      channel,
+      buildPaperRef(req.paper),
+      req.focus,
+      ctrl,
+    ).finally(() => activeRuns.delete(channel));
     return { channel };
   },
 );
@@ -258,19 +265,27 @@ ipcMain.handle(
     void (async () => {
       const sender = event.sender;
       try {
-        const { scene } = await refineWhiteboard(req.scene, paperRef, req.instruction, {
-          onLog: (line) => {
-            if (!sender.isDestroyed()) sender.send(channel, { type: 'log', text: line });
+        const { scene } = await refineWhiteboard(
+          req.scene,
+          paperRef,
+          req.instruction,
+          {
+            onLog: (line) => {
+              if (!sender.isDestroyed()) sender.send(channel, { type: 'log', text: line });
+            },
+            onAssistantText: (delta) => {
+              if (!sender.isDestroyed())
+                sender.send(channel, { type: 'delta', text: delta });
+            },
+            onSceneUpdate: (s) => {
+              if (!sender.isDestroyed())
+                sender.send(channel, { type: 'scene', elements: s.elements });
+            },
           },
-          onAssistantText: (delta) => {
-            if (!sender.isDestroyed())
-              sender.send(channel, { type: 'delta', text: delta });
-          },
-          onSceneUpdate: (s) => {
-            if (!sender.isDestroyed())
-              sender.send(channel, { type: 'scene', elements: s.elements });
-          },
-        });
+          undefined,
+          undefined,
+          ctrl,
+        );
         if (!sender.isDestroyed())
           sender.send(channel, { type: 'done', elements: scene.elements });
         await saveScene(scene);
@@ -288,17 +303,43 @@ ipcMain.handle(
   },
 );
 
+// Abort an in-flight generate/refine run by channel id. Pipeline
+// catches the resulting AbortError and emits `[aborted]`; the host's
+// finally clause in runStreamingGenerate / refine handler still runs
+// and the channel gets cleaned up.
+ipcMain.handle('generate:abort', async (_e, channel: string) => {
+  const ctrl = activeRuns.get(channel);
+  if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+});
+
 // ---------- Window ----------
 
 async function createWindow(): Promise<void> {
   await ensureWorkDir();
+  // Set the dock icon during `npm run app` (dev) so the running app
+  // doesn't show a generic Electron icon. When packaged via
+  // electron-builder, build config is responsible for the .icns; this
+  // hook only matters for the dev path. The 1024x1024 PNG sits at the
+  // package root next to icon.icns.
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = resolve(__dirname, '..', 'icon-1024.png');
+    if (existsSync(iconPath)) {
+      try {
+        app.dock.setIcon(iconPath);
+      } catch {
+        /* dock not ready or platform mismatch — non-fatal */
+      }
+    }
+  }
+  app.setName('Slate');
   const win = new BrowserWindow({
     width: 1240,
     height: 820,
+    title: 'Slate',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#f5f5f7',
     webPreferences: {
-      preload: resolve(__dirname, 'preload.js'),
+      preload: resolve(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

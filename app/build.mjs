@@ -43,9 +43,12 @@ await esbuild({
 });
 
 console.log('• compiling preload…');
+// Preload is CJS (Electron's contract); package.json has "type": "module"
+// so a .js extension would be parsed as ESM. .cjs forces Node to treat it
+// as CommonJS regardless of the package-level type.
 await esbuild({
   entryPoints: [resolve(here, 'preload.ts')],
-  outfile: resolve(out, 'preload.js'),
+  outfile: resolve(out, 'preload.cjs'),
   bundle: true,
   platform: 'node',
   format: 'cjs',

@@ -42,6 +42,7 @@ type WbApi = {
       onError?: (msg: string) => void;
     },
   ) => Promise<{ channel: string }>;
+  abort: (channel: string) => Promise<void>;
 };
 
 declare global {
@@ -215,7 +216,7 @@ function Landing({
             marginBottom: 6,
           }}
         >
-          Whiteboard
+          Slate
         </div>
         <div
           style={{
@@ -325,47 +326,83 @@ export function App() {
         },
         loadViewport: () => window.wb.viewport.load(),
         saveViewport: (vp) => window.wb.viewport.save(vp),
-        generate: (cb, focus) =>
+        saveAsset: (filename, bytes) => window.wb.asset.save(filename, bytes),
+        generate: (cb, focus, abortController) =>
           new Promise((resolve, reject) => {
-            void window.wb.generate(
-              { paper, focus },
-              {
-                onLog: cb.onLog,
-                onScene: (elements) =>
-                  cb.onScene?.({
-                    elements: elements as WhiteboardScene['elements'],
-                  }),
-                onDone: (info) =>
-                  resolve({
-                    scene: {
-                      elements: info.elements as WhiteboardScene['elements'],
-                    },
-                    usd: info.usd,
-                  }),
-                onError: (msg) => reject(new Error(msg)),
-              },
-            );
+            void window.wb
+              .generate(
+                { paper, focus },
+                {
+                  onLog: cb.onLog,
+                  onScene: (elements) =>
+                    cb.onScene?.({
+                      elements: elements as WhiteboardScene['elements'],
+                    }),
+                  onDone: (info) =>
+                    resolve({
+                      scene: {
+                        elements: info.elements as WhiteboardScene['elements'],
+                      },
+                      usd: info.usd,
+                    }),
+                  onError: (msg) => reject(new Error(msg)),
+                },
+              )
+              .then(({ channel }) => {
+                if (abortController) {
+                  // Bridge the renderer-side AbortController to the main
+                  // process: when the host aborts, fire the IPC so the
+                  // pipeline's signal flips.
+                  if (abortController.signal.aborted) {
+                    void window.wb.abort(channel);
+                  } else {
+                    abortController.signal.addEventListener(
+                      'abort',
+                      () => {
+                        void window.wb.abort(channel);
+                      },
+                      { once: true },
+                    );
+                  }
+                }
+              });
           }),
-        refine: (scene, instruction, cb) =>
+        refine: (scene, instruction, cb, abortController) =>
           new Promise((resolve, reject) => {
-            void window.wb.refine(
-              { paper, scene: { elements: scene.elements }, instruction },
-              {
-                onLog: cb.onLog,
-                onScene: (elements) =>
-                  cb.onScene?.({
-                    elements: elements as WhiteboardScene['elements'],
-                  }),
-                onDone: (info) =>
-                  resolve({
-                    scene: {
-                      elements: info.elements as WhiteboardScene['elements'],
-                    },
-                    usd: 0,
-                  }),
-                onError: (msg) => reject(new Error(msg)),
-              },
-            );
+            void window.wb
+              .refine(
+                { paper, scene: { elements: scene.elements }, instruction },
+                {
+                  onLog: cb.onLog,
+                  onScene: (elements) =>
+                    cb.onScene?.({
+                      elements: elements as WhiteboardScene['elements'],
+                    }),
+                  onDone: (info) =>
+                    resolve({
+                      scene: {
+                        elements: info.elements as WhiteboardScene['elements'],
+                      },
+                      usd: 0,
+                    }),
+                  onError: (msg) => reject(new Error(msg)),
+                },
+              )
+              .then(({ channel }) => {
+                if (abortController) {
+                  if (abortController.signal.aborted) {
+                    void window.wb.abort(channel);
+                  } else {
+                    abortController.signal.addEventListener(
+                      'abort',
+                      () => {
+                        void window.wb.abort(channel);
+                      },
+                      { once: true },
+                    );
+                  }
+                }
+              });
           }),
         clear: async () => {
           await window.wb.paper.clear();

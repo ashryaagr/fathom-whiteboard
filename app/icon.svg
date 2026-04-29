@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eef0f5"/>
+    </linearGradient>
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" />
+      <feOffset dx="0" dy="3" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.16" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#bg)" />
+
+  <g transform="translate(0,0)" filter="url(#softShadow)">
+    <path
+      d="M 218 332
+         C 215 326, 220 318, 230 318
+         L 446 320
+         C 456 320, 460 326, 460 334
+         L 458 488
+         C 458 498, 452 502, 444 502
+         L 226 500
+         C 216 500, 213 494, 215 486
+         Z"
+      fill="#ffffff"
+      stroke="#1d1d1f"
+      stroke-width="13"
+      stroke-linejoin="round"
+      stroke-linecap="round" />
+
+    <circle
+      cx="780"
+      cy="368"
+      r="92"
+      fill="#ffffff"
+      stroke="#0a84ff"
+      stroke-width="13" />
+
+    <path
+      d="M 322 612
+         C 320 606, 326 600, 334 600
+         L 698 604
+         C 708 604, 712 612, 710 620
+         L 706 768
+         C 706 776, 700 780, 692 780
+         L 330 778
+         C 320 778, 316 770, 318 762
+         Z"
+      fill="#ffffff"
+      stroke="#1d1d1f"
+      stroke-width="13"
+      stroke-linejoin="round"
+      stroke-linecap="round" />
+  </g>
+
+  <g stroke="#1d1d1f" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.55">
+    <path d="M 462 408 C 540 390, 632 380, 690 386" />
+    <path d="M 685 380 L 696 386 L 686 397" />
+
+    <path d="M 460 480 C 510 528, 540 568, 558 600" />
+    <path d="M 552 596 L 564 602 L 552 612" />
+
+    <path d="M 762 462 C 720 510, 670 560, 624 598" />
+    <path d="M 622 590 L 622 604 L 634 604" />
+  </g>
+
+  <g stroke="#0a84ff" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.75">
+    <path d="M 270 396 L 380 396" />
+    <path d="M 270 432 L 360 432" />
+    <path d="M 380 692 L 540 692" />
+    <path d="M 380 726 L 600 726" />
+  </g>
+</svg>

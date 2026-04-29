@@ -79,6 +79,13 @@ const wbApi = {
       ipcRenderer.on(channel, handler);
       return { channel };
     })(),
+  // Abort an in-flight generate/refine run. Main listens on
+  // `generate:abort` and signals the per-run AbortController, which
+  // propagates into the SDK's query() and unwinds the for-await loop
+  // with an AbortError. The pipeline catches it and emits
+  // `[aborted]` instead of surfacing as a user-visible error.
+  abort: (channel: string): Promise<void> =>
+    ipcRenderer.invoke('generate:abort', channel),
 };
 
 contextBridge.exposeInMainWorld('wb', wbApi);

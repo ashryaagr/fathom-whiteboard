@@ -1,6 +1,6 @@
 {
   "name": "fathom-whiteboard",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Generate explanatory whiteboards from research papers using Claude + excalidraw-mcp + the coleam00 diagram SKILL.",
   "license": "MIT",
   "author": "Ashrya <ashryaagr@gmail.com>",
@@ -37,7 +37,8 @@
     "postinstall": "node scripts/build-vendor.mjs",
     "app:build": "node app/build.mjs",
     "app": "npm run app:build && electron app/dist/main.js",
-    "app:dev": "npm run app:build && WB_DEVTOOLS=1 electron app/dist/main.js"
+    "app:dev": "npm run app:build && WB_DEVTOOLS=1 electron app/dist/main.js",
+    "dist:mac": "npm run app:build && electron-builder --mac --arm64 --config electron-builder.config.cjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
@@ -50,6 +51,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.25.12",
     "typescript": "^5.6.3"
   },
