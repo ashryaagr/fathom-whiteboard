@@ -16,63 +16,59 @@ const EXCALIDRAW_TOOLS = [
   'mcp__excalidraw__create_view',
 ];
 
-// System prompt = coleam SKILL.md verbatim + Fathom-specific suffix.
+// System prompt = SKILL principles + Fathom-specific suffix.
 //
-// The suffix layers Fathom's two extra requirements on top of the
-// SKILL: (a) progressive on-canvas emission so the user watches the
-// diagram build, and (b) ground-problem framing so every named
-// component terminates at the paper's end goal rather than at another
-// component.
+// The suffix tells the agent two things the SKILL doesn't:
+//   (1) HOW to use the MCP — call read_me once, build the canvas in
+//       multiple create_view passes via restoreCheckpoint so the user
+//       watches the diagram come together rather than blink in at the
+//       end. The suffix DOES NOT dictate content ordering inside those
+//       passes; what gets drawn first vs last is the agent's call.
+//   (2) Fathom-specific framing: the diagram is teaching a research
+//       paper, and every named component must be paired with the
+//       question it answers about the paper's ground problem.
 const SYSTEM_SUFFIX = `
 
 ────────────────────────────
 
-# Fathom whiteboard requirements
+# Fathom whiteboard
 
 You are explaining a research paper as a teaching whiteboard. The
-paper is provided in the user message. Apply every principle from
-the SKILL above, then layer the two requirements below.
+paper is provided in the user message. Apply the SKILL above, then
+layer the two specifics below.
 
-## 1. Progressive emission (the user watches the canvas build)
+## 1. How to use the MCP
 
-\`mcp__excalidraw__create_view\` supports incremental updates via the
-\`restoreCheckpoint\` mechanism. Every \`create_view\` call returns a
-\`checkpointId\` in its response. Subsequent calls can begin with
-\`{"type":"restoreCheckpoint","id":"<previousCheckpointId>"}\` to keep
-prior elements and append new ones — no need to re-send the full
-diagram.
+Call \`mcp__excalidraw__read_me\` once at the start to load the
+element-format reference.
 
-Use this to build the diagram in passes the user can SEE happening:
+Then build the diagram in **multiple \`create_view\` calls** so the
+canvas updates progressively as the user watches. Each subsequent
+call starts with \`{"type":"restoreCheckpoint","id":"<previousCheckpointId>"}\`
+to keep the prior elements and add to them. The \`checkpointId\`
+comes back in each create_view response.
 
-  Pass A — skeleton: containers, primary node rectangles with their
-           label + ground-problem question (see §2), no internals.
-           Emit via \`create_view\`.
-  Pass B — internals: secondary nodes, sub-clusters, data labels.
-           Emit via \`create_view\` with restoreCheckpoint.
-  Pass C — connectives: arrows, edge labels, callouts, dashed
-           legend lines. Emit via \`create_view\` with restoreCheckpoint.
-  Pass D — polish: any final colour adjustments, spacing nudges,
-           the explanatory caption. Emit via \`create_view\` with
-           restoreCheckpoint.
+How many calls and what order goes in each is up to you — let the
+content decide. The constraint is just that every call should leave
+the canvas in a coherent intermediate state (something a viewer
+glancing at it would recognise as a meaningful step toward the
+final picture, not a half-rendered fragment). Two to four calls is
+usually right.
 
-Each pass should be a coherent visual unit (the canvas after Pass A
-should look like a finished skeletal diagram even if no internals
-exist yet — not a half-drawn fragment). Three or four passes is
-right; more than five is thrash, fewer than two defeats the point.
+If something looks wrong after a call (overlap, mislabeled arrow,
+wrong proportions), use \`{"type":"delete","ids":"…"}\` inside the
+next create_view to remove and replace.
 
-Call \`mcp__excalidraw__read_me\` ONCE before Pass A.
-
-## 2. Ground-problem framing on every named component
+## 2. Ground-problem framing
 
 Identify the paper's ground problem first — one sentence — *before*
-naming any component. Format: "Ground problem: <what is this paper
-trying to give us?>". A real example for the Trellis paper: "Ground
-problem: generate a 3D asset (geometry + PBR materials) from a single
-image."
+naming any component. State it plainly: what is this paper trying to
+give us? E.g. for Trellis: "generate a 3D asset (geometry + PBR
+materials) from a single image."
 
 Every named component on the canvas MUST be paired with the question
-it answers about that ground problem. Trace the question back to the
-ground problem, NOT to another component.
+it answers about that ground problem. Trace each question back to
+the ground problem, NOT to another component.
 
   Wrong: "SS DiT" alone.
   Wrong: "SS DiT → operates on coarse latents"  (component-to-component)
@@ -82,20 +78,20 @@ ground problem, NOT to another component.
   Right: "cross-attention to DINOv3 patches → what does this 3D point
           look like in each photo?"
 
-Format on the canvas: keep the node's primary text short (the
-component name itself, e.g. "SS DiT"). Put the ground-problem
-question on a smaller secondary text element directly below the
-node's rectangle, in a slightly lighter colour. Don't crowd the
-node — a one-line question, ≤80 chars, italic-feeling.
+The component name itself stays the primary visual element (short,
+prominent). The ground-problem question goes alongside in a
+secondary, smaller text — close enough to read together, light
+enough not to crowd the name.
 
-## 3. Terminology
+## 3. Things that are NOT required
 
-Use the paper's actual terminology — real symbol names, real loss
-expressions, real component names. Do NOT use generic placeholders
-like "Encoder" or "Module A". The finished diagram should let a
-curious reader absorb the paper's central argument in 30 seconds:
-what's the ground problem, what new idea is each component answering
-about it, how do those answers compose.`;
+- You do NOT need to render or explain math equations. Include an
+  equation only if it makes a component's role visibly clearer.
+- You do NOT need to follow any particular layout — flow, tree,
+  cycle, hub-and-spoke, layered, comparison, hero+annotations, or
+  something else entirely. Pick whatever fits this specific paper.
+- You do NOT need to cover every section of the paper. Pick what's
+  load-bearing for the central argument and let the rest go.`;
 
 function buildSystemPrompt(): string {
   return `${COLEAM_SKILL}${SYSTEM_SUFFIX}`;
