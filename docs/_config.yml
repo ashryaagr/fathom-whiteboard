@@ -1,0 +1,41 @@
+title: Slate
+description: Paste anything. Get a whiteboard.
+url: https://ashryaagr.github.io
+baseurl: /fathom-whiteboard
+show_downloads: false
+github:
+  is_project_page: true
+  repository_url: https://github.com/ashryaagr/fathom-whiteboard
+
+theme: jekyll-theme-cayman
+remote_theme: pages-themes/cayman@v0.2.0
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-readme-index
+  - jekyll-default-layout
+  - jekyll-titles-from-headings
+
+# Render plain-Markdown files (no front-matter) through the theme.
+relative_links:
+  enabled: true
+  collections: true
+readme_index:
+  enabled: true
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+include:
+  - INSTALL.md
+  - PRINCIPLES.md
+  - methodology.md
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
