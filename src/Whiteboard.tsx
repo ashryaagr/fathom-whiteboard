@@ -77,6 +77,47 @@ function viewportEqual(a: WhiteboardViewport | null, b: WhiteboardViewport): boo
 
 const SIDE_PANEL_WIDTH = 360;
 const SIDE_PANEL_COLLAPSED_WIDTH = 28;
+
+// Status indicator: a 7px dot whose colour + animation reflect what
+// the agent is doing. Quiet when idle, gently pulsing when an agent
+// run is in flight, red on error. Reads as Apple-system semantic.
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === 'error'
+      ? '#ff453a'
+      : status === 'generating' || status === 'refining'
+      ? '#0a84ff'
+      : status === 'awaiting-focus'
+      ? '#ff9f0a'
+      : status === 'idle'
+      ? '#30d158'
+      : '#86868b';
+  const animate = status === 'generating' || status === 'refining';
+  return (
+    <>
+      <span
+        style={{
+          display: 'inline-block',
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: color,
+          boxShadow: animate ? `0 0 0 0 ${color}66` : 'none',
+          animation: animate ? 'wbPulse 1.6s ease-in-out infinite' : 'none',
+          flexShrink: 0,
+        }}
+        aria-hidden="true"
+      />
+      <style>{`
+        @keyframes wbPulse {
+          0%   { box-shadow: 0 0 0 0 ${color}66; }
+          50%  { box-shadow: 0 0 0 6px ${color}00; }
+          100% { box-shadow: 0 0 0 0 ${color}00; }
+        }
+      `}</style>
+    </>
+  );
+}
 // 400ms debounce on every save path. Tight enough that a tab close /
 // crash loses ≤1 frame of pan, zoom, or edit; loose enough that a
 // burst of agent emits or rapid panning coalesces into a single write.
@@ -477,19 +518,24 @@ export function Whiteboard({ host }: Props) {
       <div
         style={{
           width: sidePanelWidth,
-          borderLeft: '1px solid #e5e5e5',
-          background: '#fafafa',
+          borderLeft: '1px solid rgba(0,0,0,0.06)',
+          background: 'rgba(248,248,250,0.85)',
+          backdropFilter: 'saturate(180%) blur(20px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(20px)',
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          transition: 'width 180ms ease',
+          transition: 'width 220ms cubic-bezier(0.32,0.72,0,1)',
           flexShrink: 0,
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif",
+          fontFeatureSettings: "'kern','liga','calt'",
         }}
       >
         {panelCollapsed ? (
           <button
             onClick={() => setPanelCollapsed(false)}
-            title="Show activity panel"
+            title="Show activity"
             aria-label="Show activity panel"
             style={{
               width: '100%',
@@ -497,14 +543,16 @@ export function Whiteboard({ host }: Props) {
               border: 'none',
               background: 'transparent',
               cursor: 'pointer',
-              fontSize: 14,
-              color: '#666',
-              fontFamily: 'system-ui',
+              fontSize: 12,
+              fontWeight: 500,
+              color: '#86868b',
+              fontFamily: 'inherit',
               writingMode: 'vertical-rl',
-              padding: '12px 0',
+              padding: '14px 0',
+              letterSpacing: '0.01em',
             }}
           >
-            ‹ Activity
+            Activity
           </button>
         ) : (
           <>
@@ -513,26 +561,28 @@ export function Whiteboard({ host }: Props) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 10px',
-                borderBottom: '1px solid #e5e5e5',
-                fontFamily: 'system-ui',
-                fontSize: 12,
-                color: '#666',
+                padding: '12px 14px 10px',
+                borderBottom: '1px solid rgba(0,0,0,0.06)',
+                fontSize: 13,
+                color: '#1d1d1f',
               }}
             >
-              <span style={{ fontWeight: 600 }}>
-                {status === 'generating'
-                  ? 'Generating…'
-                  : status === 'refining'
-                  ? 'Refining…'
-                  : status === 'loading'
-                  ? 'Loading…'
-                  : status === 'awaiting-focus'
-                  ? 'Ready to generate'
-                  : status === 'error'
-                  ? 'Error'
-                  : 'Activity'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <StatusDot status={status} />
+                <span style={{ fontWeight: 600, letterSpacing: '-0.005em' }}>
+                  {status === 'generating'
+                    ? 'Generating'
+                    : status === 'refining'
+                    ? 'Refining'
+                    : status === 'loading'
+                    ? 'Loading'
+                    : status === 'awaiting-focus'
+                    ? 'Ready to generate'
+                    : status === 'error'
+                    ? 'Error'
+                    : 'Whiteboard'}
+                </span>
+              </div>
               <button
                 onClick={() => setPanelCollapsed(true)}
                 title="Collapse"
@@ -541,9 +591,20 @@ export function Whiteboard({ host }: Props) {
                   border: 'none',
                   background: 'transparent',
                   cursor: 'pointer',
-                  fontSize: 14,
-                  color: '#666',
-                  padding: '0 4px',
+                  fontSize: 16,
+                  lineHeight: 1,
+                  color: '#86868b',
+                  padding: 4,
+                  borderRadius: 6,
+                  transition: 'background 120ms ease, color 120ms ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(0,0,0,0.06)';
+                  e.currentTarget.style.color = '#1d1d1f';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#86868b';
                 }}
               >
                 ›
@@ -555,10 +616,10 @@ export function Whiteboard({ host }: Props) {
               style={{
                 flex: 1,
                 overflowY: 'auto',
-                padding: '8px 10px',
-                fontFamily: 'ui-monospace, Menlo, monospace',
-                fontSize: 11,
-                color: '#444',
+                padding: '10px 14px',
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: '#3a3a3c',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}
@@ -566,20 +627,39 @@ export function Whiteboard({ host }: Props) {
               {logLines.length === 0 ? (
                 <div
                   style={{
-                    color: '#999',
-                    fontFamily: 'system-ui',
-                    fontStyle: 'italic',
+                    color: '#86868b',
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    paddingTop: 4,
                   }}
                 >
                   {status === 'awaiting-focus'
-                    ? 'Type what you want the whiteboard to focus on (or leave blank), then click Generate.'
+                    ? 'Tell the agent what to focus on, or leave blank for a general overview.'
                     : status === 'idle' && hasGenerated
-                    ? 'Whiteboard ready. Ask a follow-up below.'
-                    : 'Waiting for agent activity…'}
+                    ? 'Ready. Ask a follow-up below.'
+                    : status === 'loading'
+                    ? 'Loading…'
+                    : 'Waiting for the agent…'}
                 </div>
               ) : (
                 logLines.map((line, i) => (
-                  <div key={i} style={{ marginBottom: 2 }}>
+                  <div
+                    key={i}
+                    style={{
+                      marginBottom: 3,
+                      // Slight emphasis on the freshest line for
+                      // readability without making older lines noise.
+                      color: i === logLines.length - 1 ? '#1d1d1f' : '#3a3a3c',
+                      fontFamily:
+                        line.startsWith('[tool_use]') || line.startsWith('[result]')
+                          ? "ui-monospace, 'SF Mono', Menlo, monospace"
+                          : 'inherit',
+                      fontSize:
+                        line.startsWith('[tool_use]') || line.startsWith('[result]')
+                          ? 11
+                          : 12,
+                    }}
+                  >
                     {line}
                   </div>
                 ))
@@ -588,12 +668,12 @@ export function Whiteboard({ host }: Props) {
 
             <div
               style={{
-                borderTop: '1px solid #e5e5e5',
-                padding: 8,
+                borderTop: '1px solid rgba(0,0,0,0.06)',
+                padding: '10px 12px 12px',
                 display: 'flex',
-                gap: 6,
+                gap: 8,
                 alignItems: 'center',
-                background: '#fff',
+                background: 'rgba(255,255,255,0.55)',
               }}
             >
               <input
@@ -611,27 +691,53 @@ export function Whiteboard({ host }: Props) {
                 autoFocus={status === 'awaiting-focus'}
                 style={{
                   flex: 1,
-                  padding: '6px 8px',
-                  fontFamily: 'system-ui',
+                  padding: '8px 12px',
+                  fontFamily: 'inherit',
                   fontSize: 13,
-                  border: '1px solid #ccc',
-                  borderRadius: 4,
+                  color: '#1d1d1f',
+                  background: 'rgba(255,255,255,0.9)',
+                  border: '1px solid rgba(0,0,0,0.10)',
+                  borderRadius: 9,
+                  outline: 'none',
                   minWidth: 0,
+                  transition: 'border-color 120ms ease, box-shadow 120ms ease',
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(10,132,255,0.5)';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(10,132,255,0.18)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)';
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
               />
               <button
                 onClick={handleSendOrGenerate}
                 disabled={sendDisabled}
                 style={{
-                  padding: '6px 10px',
-                  fontFamily: 'system-ui',
+                  padding: '8px 14px',
+                  fontFamily: 'inherit',
                   fontSize: 13,
-                  border: '1px solid #ccc',
-                  borderRadius: 4,
-                  background: status === 'awaiting-focus' ? '#1d4ed8' : '#fff',
-                  color: status === 'awaiting-focus' ? '#fff' : '#000',
-                  cursor: 'pointer',
+                  fontWeight: 500,
+                  letterSpacing: '-0.005em',
+                  background: sendDisabled
+                    ? 'rgba(10,132,255,0.3)'
+                    : '#0a84ff',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 9,
+                  cursor: sendDisabled ? 'default' : 'pointer',
                   flexShrink: 0,
+                  transition: 'background 120ms ease, transform 80ms ease',
+                }}
+                onMouseDown={(e) => {
+                  if (!sendDisabled) e.currentTarget.style.transform = 'scale(0.97)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
                 {buttonLabel}
