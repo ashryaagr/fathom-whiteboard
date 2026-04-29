@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Fathom whiteboard render harness</title>
+<link rel="stylesheet" href="/node_modules/@excalidraw/excalidraw/dist/prod/index.css" />
+<style>
+  /* Load Excalifont so the harness measures + renders text the same
+   * way the live app does. Without this, Chromium falls back to a
+   * default sans-serif (wider than Excalifont) and labels that fit
+   * in production overflow in the harness — pollutes every critic
+   * loop with font-fallback artifacts.
+   *
+   * The woff2 files Excalidraw ships are subsetted by unicode-range;
+   * we declare them all so any glyph the agent emits is covered. The
+   * URLs go through render-real.mjs's static server which whitelists
+   * /node_modules/. */
+  @font-face {
+    font-family: 'Excalifont';
+    src: url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-be310b9bcd4f1a43f571c46df7809174.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-b9dcf9d2e50a1eaf42fc664b50a3fd0d.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-41b173a47b57366892116a575a43e2b6.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'),
+         url('/node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+  }
+  html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; background: #fafaf7; }
+  #root { display: flex; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/bundle.js"></script>
+</body>
+</html>
