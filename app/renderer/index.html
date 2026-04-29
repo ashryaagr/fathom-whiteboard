@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whiteboard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+          'Helvetica Neue', system-ui, sans-serif;
+        font-feature-settings: 'kern', 'liga', 'calt';
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      html,
+      body,
+      #root {
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        width: 100vw;
+        background: #f5f5f7;
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+      }
+      ::selection {
+        background: rgba(0, 122, 255, 0.18);
+      }
+    </style>
+  </head>
+  <body>
+    <link rel="stylesheet" href="./main.css" />
+    <div id="root"></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
