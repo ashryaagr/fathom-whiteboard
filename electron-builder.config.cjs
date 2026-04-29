@@ -86,6 +86,19 @@ module.exports = {
     gatekeeperAssess: false,
     icon: 'app/icon.icns',
   },
+  win: {
+    target: [
+      { target: 'nsis', arch: ['x64'] },
+      { target: 'zip', arch: ['x64'] },
+    ],
+    icon: 'app/icon-1024.png',
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    artifactName: 'Slate-Setup-${version}-${arch}.${ext}',
+  },
   dmg: {
     title: 'Slate ${version}',
     sign: false,
