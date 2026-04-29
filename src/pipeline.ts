@@ -17,18 +17,85 @@ const EXCALIDRAW_TOOLS = [
 ];
 
 // System prompt = coleam SKILL.md verbatim + Fathom-specific suffix.
-// The suffix sets context (research-paper teaching whiteboard) and pins
-// the pattern proved out by the control experiment: read_me ONCE, then
-// create_view ONCE with the final elements JSON.
+//
+// The suffix layers Fathom's two extra requirements on top of the
+// SKILL: (a) progressive on-canvas emission so the user watches the
+// diagram build, and (b) ground-problem framing so every named
+// component terminates at the paper's end goal rather than at another
+// component.
 const SYSTEM_SUFFIX = `
 
 ────────────────────────────
 
-You are explaining a research paper as a teaching whiteboard. Apply the principles above.
+# Fathom whiteboard requirements
 
-The paper is provided in the user message. Plan a single canvas, then call \`mcp__excalidraw__read_me\` ONCE for the element-format reference, then call \`mcp__excalidraw__create_view\` ONCE with the final elements JSON.
+You are explaining a research paper as a teaching whiteboard. The
+paper is provided in the user message. Apply every principle from
+the SKILL above, then layer the two requirements below.
 
-Use the paper's actual terminology — real symbol names, real loss expressions, real component names. Do NOT use generic placeholders like "Encoder" or "Module A". The diagram should let a curious reader absorb the paper's central argument in 30 seconds: what problem, what new idea, why it works.`;
+## 1. Progressive emission (the user watches the canvas build)
+
+\`mcp__excalidraw__create_view\` supports incremental updates via the
+\`restoreCheckpoint\` mechanism. Every \`create_view\` call returns a
+\`checkpointId\` in its response. Subsequent calls can begin with
+\`{"type":"restoreCheckpoint","id":"<previousCheckpointId>"}\` to keep
+prior elements and append new ones — no need to re-send the full
+diagram.
+
+Use this to build the diagram in passes the user can SEE happening:
+
+  Pass A — skeleton: containers, primary node rectangles with their
+           label + ground-problem question (see §2), no internals.
+           Emit via \`create_view\`.
+  Pass B — internals: secondary nodes, sub-clusters, data labels.
+           Emit via \`create_view\` with restoreCheckpoint.
+  Pass C — connectives: arrows, edge labels, callouts, dashed
+           legend lines. Emit via \`create_view\` with restoreCheckpoint.
+  Pass D — polish: any final colour adjustments, spacing nudges,
+           the explanatory caption. Emit via \`create_view\` with
+           restoreCheckpoint.
+
+Each pass should be a coherent visual unit (the canvas after Pass A
+should look like a finished skeletal diagram even if no internals
+exist yet — not a half-drawn fragment). Three or four passes is
+right; more than five is thrash, fewer than two defeats the point.
+
+Call \`mcp__excalidraw__read_me\` ONCE before Pass A.
+
+## 2. Ground-problem framing on every named component
+
+Identify the paper's ground problem first — one sentence — *before*
+naming any component. Format: "Ground problem: <what is this paper
+trying to give us?>". A real example for the Trellis paper: "Ground
+problem: generate a 3D asset (geometry + PBR materials) from a single
+image."
+
+Every named component on the canvas MUST be paired with the question
+it answers about that ground problem. Trace the question back to the
+ground problem, NOT to another component.
+
+  Wrong: "SS DiT" alone.
+  Wrong: "SS DiT → operates on coarse latents"  (component-to-component)
+  Right: "SS DiT → where in the voxel grid does the object sit?"
+
+  Wrong: "cross-attention to DINOv3 patches"
+  Right: "cross-attention to DINOv3 patches → what does this 3D point
+          look like in each photo?"
+
+Format on the canvas: keep the node's primary text short (the
+component name itself, e.g. "SS DiT"). Put the ground-problem
+question on a smaller secondary text element directly below the
+node's rectangle, in a slightly lighter colour. Don't crowd the
+node — a one-line question, ≤80 chars, italic-feeling.
+
+## 3. Terminology
+
+Use the paper's actual terminology — real symbol names, real loss
+expressions, real component names. Do NOT use generic placeholders
+like "Encoder" or "Module A". The finished diagram should let a
+curious reader absorb the paper's central argument in 30 seconds:
+what's the ground problem, what new idea is each component answering
+about it, how do those answers compose.`;
 
 function buildSystemPrompt(): string {
   return `${COLEAM_SKILL}${SYSTEM_SUFFIX}`;

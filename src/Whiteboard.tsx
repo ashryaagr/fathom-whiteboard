@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import type { WhiteboardScene } from './types.js';
@@ -6,17 +6,12 @@ import type { WhiteboardScene } from './types.js';
 // Host interface — the parent app (Fathom) implements these and hands them in.
 // Every method is per-call: no event subscriptions, no global stores.
 export type WhiteboardHost = {
-  // Returns { scene, mtimeMs } for the current paper, or null if none persisted.
   loadScene: () => Promise<{ scene: WhiteboardScene; mtimeMs: number } | null>;
-  // Persists the given scene for the current paper.
   saveScene: (scene: WhiteboardScene) => Promise<void>;
-  // Generates a brand-new scene from the paper. Calls `onScene` when the agent
-  // emits an updated scene (streaming). Resolves with the final scene.
   generate: (cb: {
     onLog?: (s: string) => void;
     onScene?: (scene: WhiteboardScene) => void;
   }) => Promise<{ scene: WhiteboardScene; usd: number }>;
-  // Applies a user chat instruction to the current scene.
   refine: (
     scene: WhiteboardScene,
     instruction: string,
@@ -25,40 +20,56 @@ export type WhiteboardHost = {
       onScene?: (scene: WhiteboardScene) => void;
     },
   ) => Promise<{ scene: WhiteboardScene; usd: number }>;
-  // Optional: clear the persisted scene.
   clear?: () => Promise<void>;
 };
 
 type Props = {
   host: WhiteboardHost;
-  // If true, auto-generate when no scene is persisted. Default: true.
   autoGenerate?: boolean;
 };
 
+// Minimal subset of @excalidraw/excalidraw's API we touch. Kept here so
+// we don't drag the editor's full type surface into our props.
+type ExcalidrawApi = {
+  updateScene: (s: { elements: readonly unknown[]; appState?: Record<string, unknown> }) => void;
+};
+
 export function Whiteboard({ host, autoGenerate = true }: Props) {
-  const [scene, setScene] = useState<WhiteboardScene | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'generating' | 'refining' | 'error'>(
+  // Mount Excalidraw on first render with an empty scene so we can
+  // call updateScene() the moment the agent emits its first
+  // create_view tool call. If we waited for `scene !== null`, the
+  // editor wouldn't be on the DOM during streaming and the user would
+  // stare at a placeholder for the whole generation.
+  const [hasGenerated, setHasGenerated] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'idle' | 'generating' | 'refining' | 'error'>(
     'loading',
   );
   const [logLines, setLogLines] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const excalidrawApiRef = useRef<{ updateScene: (s: { elements: unknown[] }) => void } | null>(
-    null,
-  );
+  const apiRef = useRef<ExcalidrawApi | null>(null);
+  // Latest scene the agent emitted. We keep it in a ref because
+  // chat-refinement needs to send the current state synchronously.
+  const sceneRef = useRef<WhiteboardScene>({ elements: [] });
 
   const log = (line: string) => {
     setLogLines((prev) => [...prev.slice(-99), line]);
   };
 
-  const onSceneFromAgent = (next: WhiteboardScene) => {
-    setScene(next);
-    if (excalidrawApiRef.current) {
-      excalidrawApiRef.current.updateScene({ elements: next.elements });
+  const applySceneToCanvas = (next: WhiteboardScene) => {
+    sceneRef.current = next;
+    setHasGenerated(true);
+    if (apiRef.current) {
+      // Push the elements array onto the live Excalidraw scene. This
+      // is the streaming path: every create_view tool_use the agent
+      // emits triggers a fresh updateScene() call here, so the user
+      // watches the diagram build progressively rather than blink in
+      // at the end.
+      apiRef.current.updateScene({ elements: next.elements });
     }
   };
 
-  // Initial load — try host.loadScene(), else auto-generate.
+  // Initial load — try host.loadScene(); auto-generate if absent.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -66,15 +77,18 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         const persisted = await host.loadScene();
         if (cancelled) return;
         if (persisted && persisted.scene.elements.length > 0) {
-          setScene(persisted.scene);
+          applySceneToCanvas(persisted.scene);
           setStatus('idle');
           return;
         }
         if (autoGenerate) {
           setStatus('generating');
-          const { scene: fresh } = await host.generate({ onLog: log, onScene: onSceneFromAgent });
+          const { scene: fresh } = await host.generate({
+            onLog: log,
+            onScene: applySceneToCanvas,
+          });
           if (cancelled) return;
-          setScene(fresh);
+          applySceneToCanvas(fresh);
           await host.saveScene(fresh);
           setStatus('idle');
         } else {
@@ -93,15 +107,15 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
 
   const handleChatSend = async () => {
     const instruction = chatInput.trim();
-    if (!instruction || !scene) return;
+    if (!instruction || !hasGenerated) return;
     setChatInput('');
     setStatus('refining');
     try {
-      const { scene: next } = await host.refine(scene, instruction, {
+      const { scene: next } = await host.refine(sceneRef.current, instruction, {
         onLog: log,
-        onScene: onSceneFromAgent,
+        onScene: applySceneToCanvas,
       });
-      setScene(next);
+      applySceneToCanvas(next);
       await host.saveScene(next);
       setStatus('idle');
     } catch (err) {
@@ -110,52 +124,32 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
     }
   };
 
-  const initialData = useMemo(
-    () =>
-      scene
-        ? {
-            elements: scene.elements as never,
-            appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 1 } as never,
-          }
-        : null,
-    [scene],
-  );
-
   const busy = status === 'generating' || status === 'refining';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {scene && initialData ? (
-          <Excalidraw
-            initialData={initialData}
-            excalidrawAPI={(api) => {
-              excalidrawApiRef.current = api as unknown as {
-                updateScene: (s: { elements: unknown[] }) => void;
-              };
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: '#666',
-              fontFamily: 'system-ui',
-            }}
-          >
-            {status === 'loading' && 'Loading whiteboard…'}
-            {status === 'generating' && 'Generating whiteboard from paper…'}
-            {status === 'error' && (
-              <div style={{ color: '#c00', maxWidth: 480, textAlign: 'center' }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>Whiteboard failed</div>
-                <div style={{ fontSize: 13 }}>{errorMsg}</div>
-              </div>
-            )}
-          </div>
-        )}
+        {/*
+          Excalidraw mounts immediately on first render so the
+          streaming path can call `apiRef.current.updateScene()` for
+          every partial scene snapshot. The empty `initialData` is
+          replaced live; we never re-mount the editor across the
+          generation.
+        */}
+        <Excalidraw
+          initialData={{
+            elements: [] as never,
+            appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 1 } as never,
+          }}
+          excalidrawAPI={(api) => {
+            apiRef.current = api as unknown as ExcalidrawApi;
+            // If a load-from-disk scene came back before the API was
+            // ready, replay it now that we have the API.
+            if (sceneRef.current.elements.length > 0) {
+              apiRef.current.updateScene({ elements: sceneRef.current.elements });
+            }
+          }}
+        />
         {busy && (
           <div
             style={{
@@ -168,9 +162,30 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
               borderRadius: 6,
               fontSize: 12,
               fontFamily: 'system-ui',
+              pointerEvents: 'none',
             }}
           >
             {status === 'generating' ? 'Generating…' : 'Refining…'}
+          </div>
+        )}
+        {status === 'error' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.92)',
+              color: '#c00',
+              fontFamily: 'system-ui',
+              padding: 16,
+            }}
+          >
+            <div style={{ maxWidth: 480, textAlign: 'center' }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Whiteboard failed</div>
+              <div style={{ fontSize: 13 }}>{errorMsg}</div>
+            </div>
           </div>
         )}
       </div>
@@ -195,11 +210,11 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
             }
           }}
           placeholder={
-            scene
-              ? 'Refine the whiteboard… (e.g. "add the loss equation", "zoom into the cross-attention block")'
+            hasGenerated
+              ? 'Refine the whiteboard… (e.g. "add the loss equation", "zoom into cross-attention")'
               : 'Whiteboard will be generated first…'
           }
-          disabled={!scene || busy}
+          disabled={!hasGenerated || busy}
           style={{
             flex: 1,
             padding: '8px 10px',
@@ -211,7 +226,7 @@ export function Whiteboard({ host, autoGenerate = true }: Props) {
         />
         <button
           onClick={handleChatSend}
-          disabled={!scene || busy || !chatInput.trim()}
+          disabled={!hasGenerated || busy || !chatInput.trim()}
           style={{
             padding: '8px 14px',
             fontFamily: 'system-ui',
