@@ -6,7 +6,7 @@
   "author": "Ashrya <ashryaagr@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ashryaagr/fathom-whiteboard.git"
+    "url": "git+https://github.com/ashryaagr/slate.git"
   },
   "type": "module",
   "main": "dist/index.js",
@@ -38,7 +38,8 @@
     "app": "npm run app:build && electron app/dist/main.js",
     "app:dev": "npm run app:build && WB_DEVTOOLS=1 electron app/dist/main.js",
     "dist:mac": "npm run app:build && electron-builder --mac --arm64 --config electron-builder.config.cjs",
-    "dist:win": "npm run app:build && electron-builder --win --x64 --config electron-builder.config.cjs"
+    "dist:win": "npm run app:build && electron-builder --win --x64 --config electron-builder.config.cjs",
+    "build:hero": "node scripts/build-hero.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
@@ -53,6 +54,7 @@
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.25.12",
+    "sharp": "^0.34.5",
     "typescript": "^5.6.3"
   },
   "peerDependencies": {

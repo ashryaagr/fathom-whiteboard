@@ -32,7 +32,7 @@ Both require the Claude Code CLI at runtime — see
 ### Option A — `install.sh` (primary)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
 ```
 
 That's it. The script:
@@ -59,7 +59,7 @@ one line you need to add to `~/.zshrc` (or `~/.bashrc`).
 **Want to read the script before piping it to bash?**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh -o install.sh
 less install.sh
 bash install.sh
 ```
@@ -80,7 +80,7 @@ slate uninstall
 
 If you'd rather drag-to-Applications:
 
-1. **Download** [`Slate-arm64.dmg`](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg).
+1. **Download** [`Slate-arm64.dmg`](https://github.com/ashryaagr/slate/releases/latest/download/Slate-arm64.dmg).
 2. Double-click the DMG to mount it.
 3. Drag `Slate.app` onto the **Applications** folder shown in the DMG window.
 4. Close the disk image.
@@ -92,8 +92,8 @@ If you'd rather drag-to-Applications:
 
 | Architecture | Direct link |
 |---|---|
-| Apple Silicon (M1 / M2 / M3 / M4) | [Slate-arm64.dmg](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg) |
-| Apple Silicon, zipped `.app` | [Slate-arm64.zip](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.zip) |
+| Apple Silicon (M1 / M2 / M3 / M4) | [Slate-arm64.dmg](https://github.com/ashryaagr/slate/releases/latest/download/Slate-arm64.dmg) |
+| Apple Silicon, zipped `.app` | [Slate-arm64.zip](https://github.com/ashryaagr/slate/releases/latest/download/Slate-arm64.zip) |
 | Intel | *(build from source; prebuilt x64 lands when demand warrants)* |
 
 Updates are the same one-line re-run of `install.sh` regardless of
@@ -158,8 +158,8 @@ Slate is one repo, one `npm install`. The vendored excalidraw-mcp gets
 fetched + built by a postinstall hook:
 
 ```bash
-git clone https://github.com/ashryaagr/fathom-whiteboard.git
-cd fathom-whiteboard
+git clone https://github.com/ashryaagr/slate.git
+cd slate
 npm install
 npm run app:build
 npm run app           # launch in dev mode
@@ -208,7 +208,7 @@ file handles, or assume a specific runtime.
 
 The pipeline (`generateWhiteboard` / `refineWhiteboard`) is also
 exported as plain functions if you want to drive it without the React
-surface — see [src/pipeline.ts](https://github.com/ashryaagr/fathom-whiteboard/blob/main/src/pipeline.ts).
+surface — see [src/pipeline.ts](https://github.com/ashryaagr/slate/blob/main/src/pipeline.ts).
 
 ---
 

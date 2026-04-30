@@ -32,7 +32,7 @@ Slate's primary install path is the terminal. One line — see the
 chip at the top of this page, or copy from here:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
 ```
 
 The script extracts Slate to `/Applications`, clears the
@@ -62,11 +62,11 @@ Per-session canvas state lives under `~/Library/Application Support/Slate/sessio
 
 Slate is MIT-licensed and built in the open.
 
-- [**Source →**](https://github.com/ashryaagr/fathom-whiteboard)
-- [**Releases →**](https://github.com/ashryaagr/fathom-whiteboard/releases)
+- [**Source →**](https://github.com/ashryaagr/slate)
+- [**Releases →**](https://github.com/ashryaagr/slate/releases)
 - [**Methodology →**]({{ '/methodology' | relative_url }}) — how the pipeline actually works.
 - [**Design principles →**]({{ '/PRINCIPLES' | relative_url }}) — the rules Slate was built on. Read before proposing changes.
-- [**Report a bug →**](https://github.com/ashryaagr/fathom-whiteboard/issues)
+- [**Report a bug →**](https://github.com/ashryaagr/slate/issues)
 
 ## Slate and Fathom
 

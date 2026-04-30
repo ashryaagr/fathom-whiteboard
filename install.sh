@@ -15,7 +15,7 @@
 #
 # Usage:
 #   # First install
-#   curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
 #
 #   # Install a specific version
 #   curl … | bash -s -- --version v0.1.8
@@ -30,7 +30,7 @@
 set -euo pipefail
 
 REPO_OWNER="ashryaagr"
-REPO_NAME="fathom-whiteboard"
+REPO_NAME="slate"
 APP_NAME="Slate"
 BUNDLE_NAME="${APP_NAME}.app"
 LAUNCHER_NAME="slate"
@@ -187,17 +187,17 @@ elif [[ -d "${HOME}/Applications/${APP_NAME}.app" ]]; then
   APP="${HOME}/Applications/${APP_NAME}.app"
 else
   echo "Slate not installed. Run:" >&2
-  echo "  curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash" >&2
+  echo "  curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash" >&2
   exit 1
 fi
 
 case "${1:-}" in
   update)
     echo "Updating Slate…"
-    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh)"
+    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh)"
     ;;
   uninstall)
-    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh) --uninstall"
+    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh) --uninstall"
     ;;
   --version|-v|version)
     PLIST="${APP}/Contents/Info.plist"

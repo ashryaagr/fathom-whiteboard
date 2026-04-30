@@ -1,21 +1,42 @@
-# Slate
+<div align="center">
 
-*Paste anything. Get a whiteboard.*
+<img src="resources/icon.png" alt="Slate" width="128" height="128" />
+
+<img src="resources/hero.png" alt="Paste anything. Get a whiteboard." width="560" />
 
 <!-- TODO: hero GIF showing paste → diagram in motion -->
 
-[![Stars — Slate](https://img.shields.io/github/stars/ashryaagr/fathom-whiteboard?style=social)](https://github.com/ashryaagr/fathom-whiteboard)
-[![Stars — Fathom](https://img.shields.io/github/stars/ashryaagr/Fathom?style=social)](https://github.com/ashryaagr/Fathom)
-[![Release](https://img.shields.io/github/v/release/ashryaagr/fathom-whiteboard?label=release&color=f59e0b)](https://github.com/ashryaagr/fathom-whiteboard/releases/latest)
-[![License](https://img.shields.io/github/license/ashryaagr/fathom-whiteboard)](./LICENSE)
-
 Slate is a standalone Mac app for paste-driven whiteboard brainstorming with Claude. Drop in a paragraph, an abstract, an image, or a PDF — watch the agent draw an explanatory diagram on a live Excalidraw canvas you can edit alongside.
 
-It also ships as `fathom-whiteboard` on npm — the same component is the in-paper whiteboard tab inside [Fathom](https://github.com/ashryaagr/Fathom).
+For now: macOS + Claude Code subscription. Windows, Linux, Codex, and Gemini support coming soon.
 
-[Documentation](https://ashryaagr.github.io/fathom-whiteboard/) · [Install guide](./docs/INSTALL.md) · [How it works](#how-it-works) · [Principles](./docs/PRINCIPLES.md) · [Methodology](./docs/methodology.md) · [Build from source](#build-from-source) · [All releases](https://github.com/ashryaagr/fathom-whiteboard/releases)
+[![Release](https://img.shields.io/github/v/release/ashryaagr/slate?label=release&color=f59e0b)](https://github.com/ashryaagr/slate/releases/latest)
+[![Platform](https://img.shields.io/badge/macOS-arm64-lightgrey)](#install)
+[![License](https://img.shields.io/github/license/ashryaagr/slate)](./LICENSE)
+[![Stars — Slate](https://img.shields.io/github/stars/ashryaagr/slate?style=social)](https://github.com/ashryaagr/slate)
+[![Stars — Fathom](https://img.shields.io/github/stars/ashryaagr/Fathom?style=social&label=Fathom)](https://github.com/ashryaagr/Fathom)
+
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
+```
+
+*Apple Silicon · adds a `slate` launcher · no Gatekeeper prompt*
+
+Prefer drag-to-Applications? [Get the Mac DMG →](./docs/INSTALL.md#option-b--dmg)
+
+[Documentation](https://ashryaagr.github.io/slate/) · [Install guide](./docs/INSTALL.md) · [How it works](#how-it-works) · [Principles](./docs/PRINCIPLES.md) · [Methodology](./docs/methodology.md) · [Build from source](#build-from-source) · [All releases](https://github.com/ashryaagr/slate/releases)
+
+</div>
 
 ---
+
+## Built alongside Fathom
+
+> I'm [Ashrya](https://github.com/ashryaagr), an AI scientist. While building [Fathom](https://github.com/ashryaagr/Fathom) — a research-paper reader with a per-paper whiteboard tab — it became clear that the whiteboard surface was useful on its own. People kept asking if they could paste *anything* into it: slide decks, code architectures, photos of a meeting whiteboard. So I extracted the same component into a standalone Mac app — and that's Slate.
+
+There's nothing to sign up for, no subscription, no account. If you already pay for [Claude](https://claude.com/product/overview), you have everything Slate needs. The same component also ships as `fathom-whiteboard` on npm — the in-paper whiteboard tab inside Fathom is the same React component you can embed inside your own Electron / web app.
 
 ## What it feels like
 
@@ -33,7 +54,7 @@ Open Slate. Paste a paper abstract, a code architecture description, a screensho
 Slate's primary install path is the terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
 ```
 
 The script downloads the app, extracts to `/Applications`, clears the `com.apple.quarantine` xattr (so Gatekeeper doesn't ask for approval on first launch), ad-hoc re-signs, and drops a `slate` launcher at `~/.local/bin/slate` so you can `slate` from any terminal. Same script handles updates — re-run it or type `slate update`.
@@ -50,7 +71,7 @@ slate uninstall          # remove Slate
 
 ### Prefer a drag-to-Applications install?
 
-Download the Mac DMG: [`Slate-arm64.dmg`](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg). The [install guide](./docs/INSTALL.md#option-b--dmg) walks you through the one-time Gatekeeper approval that DMG users see on first launch. Both paths converge on the same `Slate.app`.
+Download the Mac DMG: [`Slate-arm64.dmg`](https://github.com/ashryaagr/slate/releases/latest/download/Slate-arm64.dmg). The [install guide](./docs/INSTALL.md#option-b--dmg) walks you through the one-time Gatekeeper approval that DMG users see on first launch. Both paths converge on the same `Slate.app`.
 
 Intel Macs aren't shipped in v0.1.x — build from source if you need x64 today (see below).
 
@@ -142,8 +163,8 @@ Highlights:
 ## Build from source
 
 ```bash
-git clone https://github.com/ashryaagr/fathom-whiteboard.git
-cd fathom-whiteboard
+git clone https://github.com/ashryaagr/slate.git
+cd slate
 npm install
 npm run app:build         # bundle the Electron entry + renderer
 npm run app               # launch in dev mode
@@ -172,7 +193,7 @@ Full host-contract documentation in [`src/Whiteboard.tsx`](./src/Whiteboard.tsx)
 ## Architecture
 
 ```
-fathom-whiteboard/
+slate/
 ├── src/
 │   ├── pipeline.ts        Claude Agent SDK + excalidraw-mcp wiring
 │   ├── Whiteboard.tsx     React component + WhiteboardHost interface
@@ -206,9 +227,9 @@ Slate is grounded in a small set of cognitive-science results. Citations are lis
 
 - **Graphic organisers help, modestly.** Luiten, Ames & Ackerson's (1980) meta-analysis of 135 studies found a *small but reliable* facilitative effect of advance organisers on learning and retention. (*A Meta-analysis of the Effects of Advance Organizers on Learning and Retention*, American Educational Research Journal 17(2).) Slate's whiteboard is a graphic structural overview of pasted content — it helps, but Slate doesn't sell it as a giant learning multiplier.
 
-## Slate and Fathom
+## See also
 
-Slate is the standalone version of [Fathom's](https://github.com/ashryaagr/Fathom) in-paper whiteboard tab. Use Fathom for reading and zooming into research papers; use Slate for paste-driven brainstorming against arbitrary content (anything you have in your clipboard). The same `fathom-whiteboard` npm package powers both — Fathom embeds it as one of the per-paper tabs, Slate wraps it in a minimal Electron shell.
+- [**Fathom**](https://github.com/ashryaagr/Fathom) — research-paper reader with the same whiteboard tab inside it. Use Fathom when you want to read and zoom into a paper; use Slate when you want to paste anything (slides, code, screenshots) and get a diagram. The same `fathom-whiteboard` npm package powers both.
 
 ## More tools for researchers
 

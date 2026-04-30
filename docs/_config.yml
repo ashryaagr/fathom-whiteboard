@@ -1,11 +1,11 @@
 title: Slate
 description: Paste anything. Get a whiteboard.
 url: https://ashryaagr.github.io
-baseurl: /fathom-whiteboard
+baseurl: /slate
 show_downloads: false
 github:
   is_project_page: true
-  repository_url: https://github.com/ashryaagr/fathom-whiteboard
+  repository_url: https://github.com/ashryaagr/slate
 
 theme: jekyll-theme-cayman
 remote_theme: pages-themes/cayman@v0.2.0

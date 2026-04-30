@@ -118,7 +118,7 @@ module.exports = {
     {
       provider: 'github',
       owner: 'ashryaagr',
-      repo: 'fathom-whiteboard',
+      repo: 'slate',
       releaseType: 'release',
     },
   ],
