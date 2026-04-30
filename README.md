@@ -30,22 +30,39 @@ Open Slate. Paste a paper abstract, a code architecture description, a screensho
 
 ## Install
 
-The Mac app is the primary way to use Slate today.
+Slate's primary install path is the terminal:
 
-| | |
-|---|---|
-| Apple Silicon (M1 / M2 / M3 / M4) | [Slate-arm64.dmg](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg) |
-| Apple Silicon, zipped `.app` | [Slate-arm64.zip](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.zip) |
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+```
 
-Drag `Slate.app` to `/Applications`. On first launch macOS will block it with a "can't be opened because Apple cannot check it" warning — that's expected for an unsigned indie app. Right-click → Open, then click *Open* in the dialog. After the first time, double-click works normally. The full walkthrough is in the [install guide](./docs/INSTALL.md).
+The script downloads the app, extracts to `/Applications`, clears the `com.apple.quarantine` xattr (so Gatekeeper doesn't ask for approval on first launch), ad-hoc re-signs, and drops a `slate` launcher at `~/.local/bin/slate` so you can `slate` from any terminal. Same script handles updates — re-run it or type `slate update`.
 
-If you'd rather pull the npm package and run it inside your own host app:
+Want to read it before piping it to bash? [It's here](./install.sh) — about 230 lines.
+
+Once installed:
+```bash
+slate                    # open Slate
+slate update             # pull the latest version
+slate --version          # print the installed version
+slate uninstall          # remove Slate
+```
+
+### Prefer a drag-to-Applications install?
+
+Download the Mac DMG: [`Slate-arm64.dmg`](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg). The [install guide](./docs/INSTALL.md#option-b--dmg) walks you through the one-time Gatekeeper approval that DMG users see on first launch. Both paths converge on the same `Slate.app`.
+
+Intel Macs aren't shipped in v0.1.x — build from source if you need x64 today (see below).
+
+### Embedding inside another app?
+
+Slate's whiteboard component is also published on npm as `fathom-whiteboard`:
 
 ```bash
 npm install fathom-whiteboard
 ```
 
-Documentation for the embedded path is below in [Build from source](#build-from-source).
+Documentation for the embedded path is in [Build from source](#build-from-source).
 
 ## Prerequisites
 

@@ -1,12 +1,27 @@
 # Installing Slate
 
-macOS, Apple Silicon. Slate ships as an unsigned indie app — there's no Apple Developer ID involved — so the first launch needs a one-time approval.
+For now: macOS + Claude Code subscription. Windows, Linux, Codex, and Gemini support coming soon.
 
-- [1. Download Slate](#1-download-slate)
-- [2. First launch: approve the app](#2-first-launch-approve-the-app)
-- [3. Prerequisites](#3-prerequisites)
-- [4. Build from source](#4-build-from-source)
-- [5. Embed inside another app](#5-embed-inside-another-app)
+macOS, Apple Silicon. Two install paths — pick whichever feels natural:
+
+- **Option A — `install.sh`**: `curl | bash`. No Gatekeeper approval, no
+  drag. Adds a `slate` terminal launcher. Same app, different wrapper.
+- **Option B — DMG**: the familiar drag-to-Applications flow. Requires
+  approving the app once via System Settings the first time you launch it.
+
+Both end up as `/Applications/Slate.app`. Both run the same agent
+pipeline; both pull updates with the same `install.sh` script.
+
+Both require the Claude Code CLI at runtime — see
+[Prerequisites](#3-prerequisites).
+
+- [1. Download Slate](#1-download-slate) — curl or DMG.
+- [2. First launch: approve the app](#2-first-launch-approve-the-app) —
+  DMG users only. Option A skips this.
+- [3. Prerequisites](#3-prerequisites) — Claude Code CLI.
+- [4. Build from source](#4-build-from-source) — modify or inspect Slate.
+- [5. Embed inside another app](#5-embed-inside-another-app) — npm
+  package consumed by your own host.
 - [6. Where Slate stores your data](#6-where-slate-stores-your-data)
 - [7. Verifying it works](#7-verifying-it-works)
 
@@ -14,127 +29,230 @@ macOS, Apple Silicon. Slate ships as an unsigned indie app — there's no Apple 
 
 ## 1. Download Slate
 
-| Architecture | Download |
+### Option A — `install.sh` (primary)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+```
+
+That's it. The script:
+
+1. Downloads `Slate-arm64.zip` from the latest GitHub Release.
+2. Extracts to `/Applications/Slate.app` (or `~/Applications/` if the
+   system directory isn't writable).
+3. Clears the `com.apple.quarantine` xattr — Gatekeeper treats the
+   bundle as a locally-built app, so **no "Open Anyway" prompt the
+   first time you launch**.
+4. Re-applies ad-hoc signing so the loader is satisfied.
+5. Installs a `slate` launcher at `~/.local/bin/slate`:
+   ```bash
+   slate                  # launch the app
+   slate update           # pull latest (same script runs again)
+   slate --version
+   slate uninstall
+   ```
+6. Launches Slate — you land on the welcome screen in one motion.
+
+If `~/.local/bin` isn't already on your `PATH`, the script prints the
+one line you need to add to `~/.zshrc` (or `~/.bashrc`).
+
+**Want to read the script before piping it to bash?**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh -o install.sh
+less install.sh
+bash install.sh
+```
+
+The script lives [here in the repo](../install.sh) — about 230 lines.
+
+**Install a specific version:**
+```bash
+curl -fsSL …/install.sh | bash -s -- --version v0.1.8
+```
+
+**Uninstall:**
+```bash
+slate uninstall
+```
+
+### Option B — DMG
+
+If you'd rather drag-to-Applications:
+
+1. **Download** [`Slate-arm64.dmg`](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg).
+2. Double-click the DMG to mount it.
+3. Drag `Slate.app` onto the **Applications** folder shown in the DMG window.
+4. Close the disk image.
+5. Open `/Applications/Slate.app`. macOS will block it the first time
+   with a "can't be opened because Apple cannot check it" warning —
+   that's expected. Continue to
+   [Section 2](#2-first-launch-approve-the-app) for the one-time
+   approval.
+
+| Architecture | Direct link |
 |---|---|
-| Apple Silicon (M1 / M2 / M3 / M4), DMG | [Slate-arm64.dmg](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg) |
+| Apple Silicon (M1 / M2 / M3 / M4) | [Slate-arm64.dmg](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.dmg) |
 | Apple Silicon, zipped `.app` | [Slate-arm64.zip](https://github.com/ashryaagr/fathom-whiteboard/releases/latest/download/Slate-arm64.zip) |
-| Intel | *(build from source — see section 4)* |
+| Intel | *(build from source; prebuilt x64 lands when demand warrants)* |
 
-**DMG path:** double-click → drag `Slate.app` to the `Applications` folder shown in the disk-image window → close the disk image.
+Updates are the same one-line re-run of `install.sh` regardless of
+which install path you chose.
 
-**Zip path:** double-click `Slate-arm64.zip` in Finder → drag the resulting `Slate.app` into `/Applications`.
-
-Both end up at `/Applications/Slate.app`.
+---
 
 ## 2. First launch: approve the app
 
-Slate is ad-hoc-signed, not Apple-signed. The first time you launch, macOS will block it with a *"Slate.app can't be opened because Apple cannot check it for malicious software"* warning.
+*Only needed for the DMG path. Option A clears the quarantine xattr
+during install so this whole section is bypassed.*
 
-This is expected — there's no malware involved, just an indie developer who hasn't paid for an Apple Developer ID. The bundle is the same `.app` you'd get if you built from source. To approve:
+Slate is signed ad-hoc — it's a real, valid signature, but not from an
+Apple Developer ID, so on first launch macOS asks you to confirm:
 
-1. Right-click `Slate.app` in `/Applications` → **Open**.
-2. macOS shows a slightly different dialog with an **Open** button. Click it.
-3. Slate launches. From now on, double-clicking works normally.
+1. Open `/Applications/Slate.app`. macOS shows
+   *"Slate.app can't be opened because Apple cannot check it for
+   malicious software"*.
+2. Click **Done** (the dialog only offers that, by design).
+3. Open **System Settings → Privacy & Security**.
+4. Scroll to the **Security** section. You'll see:
+   *"Slate.app was blocked to protect your Mac"*.
+5. Click **Open Anyway** next to that line.
+6. macOS prompts for your password (or Touch ID).
+7. A second dialog appears — *"macOS cannot verify the developer of
+   Slate.app"*. Click **Open**.
 
-If you'd rather verify the bundle's signature first:
+After this one-time approval, double-clicking `Slate.app` opens it
+normally. Future updates re-use the same approval.
 
-```bash
-codesign --verify --deep --strict --verbose=2 /Applications/Slate.app
-# Should print: "valid on disk; satisfies its Designated Requirement"
-```
+If you'd rather avoid this dance entirely, switch to Option A — it
+clears the quarantine xattr at install time, so the first launch is
+silent.
+
+---
 
 ## 3. Prerequisites
 
-Slate runs the agent through Anthropic's [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript), which spawns the Claude Code CLI as a subprocess. You need:
+Slate runs the agent through the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript), which wraps the Claude Code CLI. You need:
 
-- [ ] **Claude Code CLI installed**, with `claude` on your `$PATH`.
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | sh
-   which claude    # should print something like /Users/you/.local/bin/claude
-   claude --version
-   ```
-- [ ] **Claude Code signed in.** Slate uses your existing Claude subscription — no API keys.
-   ```bash
-   claude /login   # opens a browser-based sign-in flow
-   ```
+- **macOS on Apple Silicon** for the standalone app. (The npm package is platform-agnostic.)
+- **Claude Code CLI installed**, with `claude` on your `$PATH`:
+  ```bash
+  curl -fsSL https://claude.ai/install.sh | sh
+  which claude    # should print something like /Users/you/.local/bin/claude
+  claude --version
+  ```
+- **Claude Code signed in.** Slate uses your existing Claude
+  subscription via the CLI — no API keys, no accounts inside Slate:
+  ```bash
+  claude /login
+  ```
 
-If `claude` isn't on `$PATH` when Slate launches, the app surfaces the exact command to run. Re-launch and continue.
+If `claude` isn't on `$PATH` when Slate launches, the app surfaces a
+dialog with the specific command to run. Re-launch and continue.
+
+---
 
 ## 4. Build from source
+
+Slate is one repo, one `npm install`. The vendored excalidraw-mcp gets
+fetched + built by a postinstall hook:
 
 ```bash
 git clone https://github.com/ashryaagr/fathom-whiteboard.git
 cd fathom-whiteboard
 npm install
-npm run app:build         # bundles Electron entry + renderer to app/dist/
-npm run app               # launch in dev mode
-npm run dist:mac          # produce release/Slate-arm64.{dmg,zip}
+npm run app:build
+npm run app           # launch in dev mode
 ```
 
-The `dist:mac` script builds the same DMG + zip pair that ships on GitHub Releases. The output lands in `release/` (not `dist/`, which is the npm library output).
-
-If you only want the npm library (for embedding inside another app):
+For a packaged Mac app:
 
 ```bash
-npm install
-npm run build             # produces dist/ — the published npm payload
+npm run dist:mac      # → release/Slate-arm64.dmg + release/Slate-arm64.zip
 ```
+
+Requires Node 22+, macOS 14+, Xcode Command Line Tools.
+
+For HMR / DevTools-attached dev:
+```bash
+npm run app:dev       # WB_DEVTOOLS=1 — Cmd+Option+I works
+```
+
+---
 
 ## 5. Embed inside another app
 
-Slate's pipeline + React component ship as `fathom-whiteboard` on npm:
+Slate ships as `fathom-whiteboard` on npm — the same component, but as
+a React surface you can mount inside your own Electron / web app:
 
 ```bash
 npm install fathom-whiteboard
 ```
 
-```ts
-import { generateWhiteboard, refineWhiteboard } from 'fathom-whiteboard';
-import { Whiteboard, type WhiteboardHost } from 'fathom-whiteboard/react';
+```tsx
+import { Whiteboard, useWhiteboardScene } from 'fathom-whiteboard/react';
+
+const host = {
+  generate: (cb) => window.api.generate(cb),
+  refine: (scene, instruction, cb) => window.api.refine(scene, instruction, cb),
+  loadScene: () => window.api.loadScene(),
+  saveScene: (scene) => window.api.saveScene(scene),
+};
+
+<Whiteboard host={host} />
 ```
 
-The host provides four methods (`loadScene`, `saveScene`, `generate`, `refine`) and the component handles canvas rendering, chat input, persistence wiring, and the streaming render. Full host-contract documentation is in [`src/Whiteboard.tsx`](../src/Whiteboard.tsx) — search for `WhiteboardHost`.
+The host is anything that wires `generate` / `refine` to a Claude
+Agent SDK instance. The library doesn't open network sockets, mount
+file handles, or assume a specific runtime.
 
-[Fathom](https://github.com/ashryaagr/Fathom)'s in-paper whiteboard tab uses exactly this contract, threading the events from a Node main process through an `ipcRenderer.invoke` + `webContents.send` pair. The Slate Mac app uses the same component with a thinner host that reads/writes a single per-session canvas file.
+The pipeline (`generateWhiteboard` / `refineWhiteboard`) is also
+exported as plain functions if you want to drive it without the React
+surface — see [src/pipeline.ts](https://github.com/ashryaagr/fathom-whiteboard/blob/main/src/pipeline.ts).
+
+---
 
 ## 6. Where Slate stores your data
 
+Slate writes nothing to your home directory other than the per-session
+canvas state, kept under:
+
 ```
-~/Library/Application Support/Slate/
-└── sessions/
-    └── last/
-        ├── whiteboard.excalidraw     ← the persisted canvas
-        ├── whiteboard.viewport.json  ← scroll + zoom restoration
-        ├── paper.json                ← the most recent pasted content
-        └── assets/                   ← pasted images and PDFs
+~/Library/Application Support/Slate/sessions/last/
 ```
 
-Delete the `sessions/last/` directory at any time to wipe state without uninstalling.
+Inside it:
+- `scene.json` — the live Excalidraw scene (boxes, arrows, edits).
+- `paper.json` — the most-recently pasted content + any saved attachments.
+- `viewport.json` — last-known scroll/zoom position.
 
-Slate does not write anywhere else. There's no global config, no telemetry log, no analytics file.
+Delete the folder any time to reset Slate. The pasted content is gone;
+the app boots into the empty paste-prompt screen.
+
+There is no telemetry, no analytics, no remote logging. Slate doesn't
+even check for updates unless you re-run `slate update` (or
+`install.sh`) yourself.
+
+---
 
 ## 7. Verifying it works
 
-After install, launch Slate. You should see:
-
-- An empty canvas with a chat input at the bottom.
-- A status indicator that turns amber while the agent is drawing.
-- The `?` button reveals shortcuts and gestures.
-
-Quick smoke test: paste a paragraph from any paper or article into the chat. The first agent turn typically completes in 30–60 seconds and produces a 50–150-element scene.
-
-If it doesn't work:
+After install:
 
 ```bash
-# Check the Electron log (DevTools → Console while Slate is running)
-# Look for [Slate …] or [fathom-whiteboard …] lines.
-
-# Verify Claude Code:
-claude --version
-claude /login
-
-# Verify Slate signature:
-codesign --verify --deep --strict /Applications/Slate.app
+slate --version       # prints the installed version, e.g. "0.1.8"
+slate                 # launches Slate
 ```
 
-If you're stuck, [open an issue](https://github.com/ashryaagr/fathom-whiteboard/issues) with the relevant log lines — every subsystem emits a prefix so the failing stage is identifiable from log alone.
+Inside the app:
+1. The paste-prompt screen should be visible — empty canvas, "Paste
+   anything…" prompt at the bottom.
+2. Paste any short text (e.g. a paper abstract). Press Return.
+3. Within 1–2 seconds the activity log shows
+   `[tool_use] mcp__excalidraw__create_view` and the canvas starts
+   drawing.
+
+If step 3 hangs without progress for more than ~15s, check that
+`claude` is on your `$PATH` and signed in (Section 3). The DevTools
+console (Cmd+Option+I) prints `[Slate …]` and `[fathom-whiteboard …]`
+diagnostic lines for every IPC + agent turn.

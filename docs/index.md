@@ -28,9 +28,23 @@ Open Slate. Paste. Hit return. Watch the agent draw. Edit the result. Type a ref
 
 ## Install
 
-Mac app — Apple Silicon only for now:
+Slate's primary install path is the terminal. One line — see the
+chip at the top of this page, or copy from here:
 
-[Slate-arm64.dmg]({{ '/INSTALL#1-download-slate' | relative_url }}) (preferred) or [Slate-arm64.zip]({{ '/INSTALL#1-download-slate' | relative_url }}). First launch needs a one-time approval through System Settings — full walkthrough in the [install guide]({{ '/INSTALL' | relative_url }}).
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/fathom-whiteboard/main/install.sh | bash
+```
+
+The script extracts Slate to `/Applications`, clears the
+`com.apple.quarantine` xattr so Gatekeeper doesn't prompt, ad-hoc
+re-signs, and drops a `slate` launcher at `~/.local/bin/slate` so
+`slate` and `slate update` work from any shell. Then it launches
+Slate — you land on the welcome screen in one motion. Full
+walkthrough in the [install guide]({{ '/INSTALL' | relative_url }}).
+
+Prefer a drag-to-Applications install?
+See the [Mac DMG section of the install guide]({{ '/INSTALL' | relative_url }}#option-b--dmg)
+— the DMG download link + the one-time Gatekeeper approval walkthrough live there.
 
 Embed in your own app:
 

@@ -1,0 +1,509 @@
+---
+---
+
+/*
+ * Slate docs site.
+ *
+ * Typography policy — the voice rule:
+ *   • Handwritten (Excalifont) = *personal voice*. The Slate wordmark,
+ *     the tagline, the "Built out of necessity" section — places where a
+ *     human is speaking directly to the reader. People don't scan
+ *     handwriting; they stop and read it, exactly once. Use it
+ *     sparingly so the stopping actually happens.
+ *   • Sans (system) = *information*. Navigation, section bodies,
+ *     tables, download controls. Information should scan; handwriting
+ *     doesn't help scan.
+ *
+ * This split is enforced by limiting Excalifont to the hero and the
+ * `.handwritten` class scope. Everything else inherits the system
+ * stack. Keep it that way.
+ */
+
+$paper:        #faf4e8;
+$paper-dim:    #f3ead7;
+$ink:          #1a1614;
+$ink-soft:     #2a2420;
+$ink-faint:    #7a6a52;
+$amber:        #c9832a;
+$amber-dark:   #9f661b;
+$amber-soft:   rgba(201, 131, 42, 0.08);
+$rule:         #e0d3ac;
+
+/* --- Handwritten accent font --- */
+@font-face {
+  font-family: 'Excalifont';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fathom-whiteboard/assets/fonts/excalifont-0.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+                 U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+                 U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* --- Base --- */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Explicitly opt into a light-only design so browsers in dark mode don't
+   try to invert the paper theme (which breaks the handwritten hero). */
+html {
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: $paper;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  color: $ink-soft;
+  background: $paper;
+}
+
+a { color: $amber; text-decoration: none; transition: color .12s ease; }
+a:hover { color: $amber-dark; }
+
+::selection { background: rgba(201, 131, 42, 0.3); color: $ink; }
+
+/* --- Top navigation --- */
+/* Nav is information, not voice — system sans. */
+.site-nav {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: rgba(250, 244, 232, 0.85);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid rgba(224, 211, 172, 0.55);
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: $ink;
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    border: none;
+
+    img { display: block; border-radius: 6px; }
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+
+  .nav-links a {
+    color: $ink-soft;
+    font-size: 14.5px;
+    font-weight: 500;
+    border: none;
+  }
+  .nav-links a:hover { color: $amber; }
+
+  .github-link {
+    /* Keep the chip in sans — it reads as a control, not a link. */
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+                 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid $rule !important;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .github-link:hover {
+    border-color: $amber !important;
+    background: $amber-soft;
+    color: $amber-dark;
+  }
+  .github-link svg { opacity: 0.7; }
+}
+
+/* --- Hero (homepage only) --- */
+.hero {
+  text-align: center;
+  padding: 96px 24px 64px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.hero-title {
+  font-family: 'Excalifont', 'Caveat', 'Kalam', 'Bradley Hand', cursive;
+  font-weight: 400;
+  font-size: clamp(3.5rem, 10vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: $ink;
+  margin: 0 0 28px;
+}
+
+/* One-line handwritten caption under the wordmark. */
+.hero-caption {
+  max-width: 30em;
+  margin: 0 auto 44px;
+  font-family: 'Excalifont', 'Caveat', 'Kalam', 'Bradley Hand', cursive;
+  font-weight: 400;
+  font-size: clamp(1.4rem, 2.6vw, 1.8rem);
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: $amber-dark;
+}
+
+/* --- Primary install chip — the hero CTA. Slate's primary install
+   path is the terminal; the chip is sized to announce that. Big,
+   warm ink-on-paper card, monospace command, amber copy button on
+   the right. The DMG link is text-only underneath. --- */
+.install-chip {
+  /* System sans+mono; no handwriting in a CTA — this is a control,
+     not a voice moment. */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0;
+  margin: 36px auto 14px;
+  max-width: min(720px, 94vw);
+  background: $ink;
+  color: $paper;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 18px 48px rgba(26, 22, 20, 0.22),
+              0 8px 28px rgba(201, 131, 42, 0.18);
+}
+
+.install-chip-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 22px 22px 22px 26px;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', ui-monospace, monospace;
+  font-size: clamp(13px, 1.6vw, 15.5px);
+  line-height: 1.4;
+  color: $paper;
+  white-space: nowrap;
+  overflow-x: auto;
+  -webkit-user-select: all;
+          user-select: all;
+  /* Subtle left gutter so the command doesn't hug the bevel. */
+  background: linear-gradient(to right, rgba(250,244,232,0.04), rgba(250,244,232,0));
+}
+/* Hide the awkward terminal-scrollbar on hover for a cleaner look;
+   mobile/touch users keep the native scrollbar. */
+.install-chip-code::-webkit-scrollbar { height: 0; }
+
+.install-chip-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px;
+  border: none;
+  border-left: 1px solid rgba(250, 244, 232, 0.12);
+  background: $amber;
+  color: $ink;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background .14s ease, transform .14s ease;
+}
+.install-chip-copy:hover { background: $amber-dark; color: $paper; }
+.install-chip-copy:active { transform: scale(0.98); }
+.install-chip-copy--done { background: #7aa36b !important; color: $paper !important; }
+.install-chip-copy-icon { margin-top: -1px; flex: 0 0 auto; }
+
+/* Meta + alternative install link under the chip. */
+.install-meta {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  color: $ink-faint;
+  margin: 6px 0 0;
+  text-align: center;
+}
+.install-meta code {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', ui-monospace, monospace;
+  font-size: 12.5px;
+  background: $paper-dim;
+  border: 1px solid $rule;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: $ink;
+}
+.install-alt {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13.5px;
+  color: $ink-faint;
+  margin: 22px 0 0;
+  text-align: center;
+}
+.install-alt a {
+  color: $amber-dark;
+  border-bottom: 1px solid rgba(201, 131, 42, 0.35);
+  transition: border-color .12s ease;
+}
+.install-alt a:hover { border-bottom-color: $amber-dark; }
+
+.hero-meta {
+  margin-top: 18px;
+  font-size: 13.5px;
+  color: $ink-faint;
+  letter-spacing: 0.01em;
+}
+
+/* --- Sub-page header (for INSTALL, PRINCIPLES, etc) --- */
+.page-header {
+  text-align: left;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 72px 28px 20px;
+
+  .page-title {
+    font-family: 'Excalifont', 'Caveat', 'Kalam', 'Bradley Hand', cursive;
+    font-weight: 400;
+    font-size: 2.75rem;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: $ink;
+  }
+}
+
+/* --- Main content --- */
+.content {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 40px 28px 80px;
+}
+
+/* Content headings use system sans — they're section markers, not
+   voice. Handwritten headings belong inside a `.handwritten` scope. */
+.content h1,
+.content h2,
+.content h3,
+.content h4 {
+  color: $ink;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  margin-top: 2.25em;
+  margin-bottom: 0.6em;
+}
+
+.content h1 { font-size: 1.85rem; }
+.content h2 { font-size: 1.4rem; }
+.content h3 { font-size: 1.15rem; }
+
+/* `.handwritten` — the scoped personal-voice style. Wrap any
+   paragraph, heading, or section in <div class="handwritten">…</div>
+   (or via kramdown's {:.handwritten} attribute) and every text
+   element inside picks up Excalifont + slightly looser line-height.
+   Reserved for the hero + "Built out of necessity" on the home page;
+   use sparingly elsewhere. */
+.content .handwritten,
+.content .handwritten p,
+.content .handwritten h1,
+.content .handwritten h2,
+.content .handwritten h3,
+.content .handwritten h4,
+.content .handwritten li {
+  font-family: 'Excalifont', 'Caveat', 'Kalam', 'Bradley Hand', cursive;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  line-height: 1.55;
+}
+.content .handwritten h1 { font-size: 2.1rem; color: $amber-dark; }
+.content .handwritten h2 { font-size: 1.75rem; color: $amber-dark; }
+.content .handwritten h3 { font-size: 1.35rem; color: $ink; }
+.content .handwritten p { font-size: 1.1rem; color: $ink-soft; }
+
+.content p { margin: 0 0 1.15em; }
+.content ul, .content ol { margin: 0 0 1.25em; padding-left: 1.5em; }
+.content li { margin-bottom: 0.45em; }
+.content li > ul, .content li > ol { margin-top: 0.35em; margin-bottom: 0.35em; }
+
+.content a {
+  border-bottom: 1px solid rgba(201, 131, 42, 0.35);
+  transition: border-color .12s ease;
+}
+.content a:hover { border-bottom-color: $amber-dark; }
+
+/* Opening blockquote on homepage reads as a pull-quote. */
+.content > blockquote:first-child {
+  font-family: 'Excalifont', 'Caveat', 'Kalam', 'Bradley Hand', cursive;
+  font-size: 1.35rem;
+  line-height: 1.55;
+  color: $amber-dark;
+  margin: 0 0 3rem;
+  padding: 0;
+  border: none;
+  text-align: center;
+  max-width: 36em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Regular blockquotes in body text */
+.content blockquote {
+  margin: 1.5em 0;
+  padding: 0.75rem 1.25rem;
+  border-left: 3px solid $amber;
+  background: $amber-soft;
+  border-radius: 0 4px 4px 0;
+  color: $ink-soft;
+  font-style: italic;
+}
+.content blockquote > p:last-child { margin-bottom: 0; }
+
+/* Code */
+.content code {
+  background: $paper-dim;
+  color: $ink;
+  border: 1px solid $rule;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.88em;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', ui-monospace, monospace;
+}
+
+.content pre {
+  background: $ink-soft;
+  color: $paper;
+  border-radius: 8px;
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 1.5em 0;
+}
+.content pre code {
+  background: transparent;
+  color: inherit;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Tables — sans-serif for tabular legibility. Handwriting in tables
+   is genuinely harder to scan row-by-row. */
+.content table {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.content th, .content td {
+  border: 1px solid $rule;
+  padding: 10px 14px;
+  text-align: left;
+}
+.content th { background: $paper-dim; font-weight: 600; color: $ink; }
+
+.content hr {
+  border: none;
+  border-top: 1px solid $rule;
+  margin: 3em 0;
+}
+
+/* Images */
+.content img { max-width: 100%; height: auto; border-radius: 8px; }
+
+/* Download button inside content */
+.content .btn,
+.content a.btn-primary {
+  display: inline-block;
+  padding: 11px 24px;
+  background: $ink;
+  color: $paper !important;
+  font-weight: 600;
+  border-radius: 999px;
+  border: none !important;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 6px 18px rgba(201, 131, 42, 0.15);
+  transition: transform .15s ease;
+}
+.content .btn:hover,
+.content a.btn-primary:hover {
+  background: $amber-dark;
+  color: $paper !important;
+  transform: translateY(-1px);
+}
+
+/* --- Footer --- */
+.site-footer {
+  border-top: 1px solid $rule;
+  margin-top: 80px;
+  padding: 48px 28px 56px;
+  background: $paper;
+}
+
+.footer-inner {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui,
+               'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  text-align: center;
+  color: $ink-faint;
+  font-size: 14px;
+}
+
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: $ink;
+  font-size: 15px;
+}
+
+.footer-links {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.footer-links a { color: $ink-soft; border: none; }
+.footer-links a:hover { color: $amber; }
+
+.footer-note {
+  margin: 4px 0 0;
+  font-style: italic;
+  color: $ink-faint;
+  font-size: 13px;
+}
+
+/* --- Responsive --- */
+@media (max-width: 600px) {
+  .site-nav { padding: 12px 18px; }
+  .site-nav .nav-links { gap: 14px; }
+  .site-nav .nav-links a { font-size: 13.5px; }
+  .hero { padding: 56px 18px 40px; }
+  .hero-subtitle { font-size: 17px; }
+  .content { padding: 30px 20px 60px; }
+  .page-header { padding: 48px 20px 16px; }
+  .content h1 { font-size: 1.55rem; }
+  .content h2 { font-size: 1.25rem; }
+}
