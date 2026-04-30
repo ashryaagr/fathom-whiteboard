@@ -18,3 +18,7 @@ vendor/
 # electron-builder output (Mac app bundles, blockmaps, etc.). The lib's
 # `dist/` lives at the repo root; we keep them separate.
 release/
+
+# Local `npm pack` tarballs — only generated when uploading a release
+# asset by hand; the asset itself lives on the GitHub release page.
+*.tgz

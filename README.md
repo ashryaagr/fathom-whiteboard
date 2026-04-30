@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | b
 
 Prefer drag-to-Applications? [Get the Mac DMG →](./docs/INSTALL.md#option-b--dmg)
 
-[Documentation](https://ashryaagr.github.io/slate/) · [Install guide](./docs/INSTALL.md) · [How it works](#how-it-works) · [Principles](./docs/PRINCIPLES.md) · [Methodology](./docs/methodology.md) · [Build from source](#build-from-source) · [All releases](https://github.com/ashryaagr/slate/releases)
+[Documentation](https://ashryaagr.github.io/slate/) · [Install guide](./docs/INSTALL.md) · [How it works](#how-it-works) · [Principles](./docs/PRINCIPLES.md) · [Methodology](./docs/methodology/index.md) · [Build from source](#build-from-source) · [All releases](https://github.com/ashryaagr/slate/releases)
 
 </div>
 
@@ -128,7 +128,7 @@ Two MCP tools, one or two agent turns, one elements array out. The whole pipelin
 
 The hard part isn't the pipeline: it's the system prompt. Slate uses [coleam00's excalidraw-diagram-skill](https://github.com/coleam00/excalidraw-diagram-skill) verbatim — a 24KB design playbook that teaches the model what makes a diagram a *visual argument* (the Isomorphism Test, evidence artefacts, the bad-vs-good comparison table). The pipeline's only job is to deliver that playbook intact and stay out of the agent's way.
 
-For the long-form write-up of why this shape replaced the elaborate pre-pivot pipeline (custom MCP wrapper, template library, Pass 1 / Pass 2 / Pass 2.5 visual critic loop, ~3,000 LOC), see [docs/methodology.md](./docs/methodology.md).
+For the long-form write-up of why this shape replaced the elaborate pre-pivot pipeline (custom MCP wrapper, template library, Pass 1 / Pass 2 / Pass 2.5 visual critic loop, ~3,000 LOC), see [docs/methodology/index.md](./docs/methodology/index.md).
 
 ## Your data stays yours
 
@@ -147,7 +147,7 @@ Most whiteboard tools want a vendor relationship. Slate is a Mac app you compile
 
 ## Methodology
 
-[docs/methodology.md](./docs/methodology.md) is the engineering write-up of how Slate's pipeline works: how the SKILL prompt is delivered, what the `allowedTools` lock-down does, why the hosted MCP endpoint is the default, and what the cost profile looks like in practice (about $0.95/paper for generation, $0.10–$0.30 per refinement turn).
+[docs/methodology/index.md](./docs/methodology/index.md) is the engineering write-up of how Slate's pipeline works: how the SKILL prompt is delivered, what the `allowedTools` lock-down does, why the hosted MCP endpoint is the default, and what the cost profile looks like in practice (about $0.95/paper for generation, $0.10–$0.30 per refinement turn).
 
 ## Design principles
 
@@ -207,7 +207,8 @@ slate/
 ├── docs/
 │   ├── INSTALL.md         Mac install walkthrough
 │   ├── PRINCIPLES.md      design rules (read before changing things)
-│   ├── methodology.md     pipeline write-up
+│   ├── methodology/       pipeline write-up
+│   │   └── index.md
 │   └── index.md           docs landing page
 ├── vendor/excalidraw-mcp  cloned at install time; gitignored
 └── electron-builder.config.cjs   Mac packaging

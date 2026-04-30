@@ -33,7 +33,10 @@ kramdown:
 include:
   - INSTALL.md
   - PRINCIPLES.md
-  - methodology.md
+  - DISTRIBUTION.md
+  - DOCKER.md
+  - methodology
+  - methodology/index.md
 
 exclude:
   - Gemfile
