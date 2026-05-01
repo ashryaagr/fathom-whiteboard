@@ -1,13 +1,13 @@
 ---
-name: slate-tool-design
+name: clawdslate-tool-design
 type: skill
-audience: any agent extending or reviewing the layers Slate controls between the agent and the canvas
+audience: any agent extending or reviewing the layers clawdSlate controls between the agent and the canvas
 established: 2026-04-27
 ---
 
 # Tool design — wrappers enforce constraints; prompts only guide intent
 
-This is a CORE engineering principle in Slate (CLAUDE.md §8). Read it
+This is a CORE engineering principle in clawdSlate (CLAUDE.md §8). Read it
 before adding to or reviewing any layer between the agent and the
 canvas — the SKILL prompt, the SYSTEM_SUFFIX, `resolveSceneFromInput`,
 or the `<Whiteboard>` render path.
@@ -24,7 +24,7 @@ or the `<Whiteboard>` render path.
 Prompt-level rules ("text must fit," "labels must not overlap,"
 "callouts size to content") are *guidelines* the agent may forget,
 under-budget, or override. The user's verbatim critique on this
-class of problem (transferred from Fathom but applies to Slate
+class of problem (transferred from Fathom but applies to clawdSlate
 verbatim):
 
 > *"We should have structural ways to prevent this, or tools can
@@ -50,12 +50,12 @@ A constraint enforced only in a prompt:
   attention
 - requires another iteration round when the agent ignores it
 
-## Slate's available layers (in upstream-to-downstream order)
+## clawdSlate's available layers (in upstream-to-downstream order)
 
-Slate runs on the upstream `excalidraw-mcp` MCP — we do NOT
+clawdSlate runs on the upstream `excalidraw-mcp` MCP — we do NOT
 maintain our own MCP wrapper, by design. So the levers we control
-are different from Fathom's (Fathom has `whiteboard-mcp.ts`; Slate
-does not). The Slate layers, from most-upstream to most-
+are different from Fathom's (Fathom has `whiteboard-mcp.ts`; clawdSlate
+does not). The clawdSlate layers, from most-upstream to most-
 downstream, are:
 
 1. **`src/SKILL.md`** — the durable design playbook the agent
@@ -63,16 +63,16 @@ downstream, are:
    change paper-to-paper: "callouts size to content with consistent
    padding," "math goes in big text + colored box, not shapes,"
    "use the subject's vocabulary."
-2. **`SYSTEM_SUFFIX` in `src/pipeline.ts`** — Slate-specific layer
+2. **`SYSTEM_SUFFIX` in `src/pipeline.ts`** — clawdSlate-specific layer
    on top of the SKILL. The right home for "ground-problem
-   framing," "component-as-answer questions," any Slate-specific
+   framing," "component-as-answer questions," any clawdSlate-specific
    UX constraint that doesn't belong in a general-purpose
    diagram-skill.
 3. **`buildUserMessage` in `src/pipeline.ts`** — message-shaping
    for the specific run. Title prefix, focus block, paper content
    placement.
 4. **`resolveSceneFromInput` in `src/pipeline.ts`** — the closest
-   thing Slate has to a wrapper. Filters out pseudo-elements
+   thing clawdSlate has to a wrapper. Filters out pseudo-elements
    (`cameraUpdate`, `restoreCheckpoint`, `delete`) before they hit
    the renderer; applies `restoreCheckpoint` deltas locally so the
    renderer sees a fully-resolved scene. New geometric checks
@@ -103,7 +103,7 @@ above is the highest-leverage fix?
 - **Validate-then-reject on element shape** → `resolveSceneFromInput`.
 - **Visual defect the user can SEE and act on** → render path.
 
-The hierarchy puts the SKILL highest because Slate's
+The hierarchy puts the SKILL highest because clawdSlate's
 philosophical commitment is that the SKILL playbook is doing the
 heavy lifting; the pipeline's job is to deliver it intact.
 Bloating SYSTEM_SUFFIX with paper-specific guidance gradually
@@ -129,7 +129,7 @@ the canonical wire-protocol form (including cameraUpdate); we
 strip it before the canvas sees it. Both halves of the pipeline
 do their canonical work.
 
-This is the reference example of the principle in Slate: the
+This is the reference example of the principle in clawdSlate: the
 defect class doesn't reach the renderer because a layer *we
 control* handles it. The agent doesn't need to know.
 
@@ -144,7 +144,7 @@ its box," ask: where can this be prevented?
   ("here's a callout the agent sized correctly; here's the
   reasoning") is more durable than a prompt rule.
 - **SYSTEM_SUFFIX**. As a fallback, the suffix can re-emphasise
-  the rule for Slate-specific runs. But SYSTEM_SUFFIX is short on
+  the rule for clawdSlate-specific runs. But SYSTEM_SUFFIX is short on
   purpose; don't accrete every defect class here.
 - **`resolveSceneFromInput`**. We could add a wrap-aware check
   that fails the call if the body wraps to N lines but the
@@ -159,7 +159,7 @@ its box," ask: where can this be prevented?
 
 The rule: **start at the SKILL; descend the layers only if the
 SKILL fix can't carry the constraint.** Each descent is more
-specific to Slate, so each one is a tax on the "deliver the SKILL
+specific to clawdSlate, so each one is a tax on the "deliver the SKILL
 intact" commitment.
 
 ## Anti-patterns
@@ -170,7 +170,7 @@ The SYSTEM_SUFFIX is short on purpose. Every paragraph added
 competes for the agent's attention with the SKILL above it. If
 the rule is general (applies to every diagram, regardless of
 subject), it belongs in the SKILL — propose the change to the
-SKILL upstream, or carry a Slate-side patched copy in
+SKILL upstream, or carry a clawdSlate-side patched copy in
 `src/SKILL.md` with a comment naming the upstream rule it
 extends.
 
@@ -207,7 +207,7 @@ We do NOT patch the upstream `excalidraw-mcp`. If a defect class
 genuinely requires server-side validation, surface it as a PR to
 the upstream project, OR transform the input client-side in
 `resolveSceneFromInput`. Forking the MCP creates a maintenance
-burden Slate's "stay out of the agent's way" principle was
+burden clawdSlate's "stay out of the agent's way" principle was
 designed to avoid.
 
 ## Composability with content-quality rules

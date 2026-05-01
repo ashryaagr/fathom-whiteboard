@@ -1,6 +1,6 @@
-# Slate — Core Principles
+# clawdSlate — Core Principles
 
-Slate is a standalone Mac app for paste-driven whiteboard brainstorming with Claude. Drop in a paragraph, an abstract, an image, or a PDF — watch the agent draw an explanatory diagram on a live Excalidraw canvas you can edit alongside. The same React component ships as the `fathom-whiteboard` npm package; Fathom (the research-paper reader) embeds it as a per-paper tab. This document collects the design and engineering principles Slate is built on. Every principle below comes directly from instructions given by the user during construction; nothing here is speculative.
+clawdSlate is a standalone Mac app for paste-driven whiteboard brainstorming with Claude. Drop in a paragraph, an abstract, an image, or a PDF — watch the agent draw an explanatory diagram on a live Excalidraw canvas you can edit alongside. The same React component ships as the `fathom-whiteboard` npm package; Fathom (the research-paper reader) embeds it as a per-paper tab. This document collects the design and engineering principles clawdSlate is built on. Every principle below comes directly from instructions given by the user during construction; nothing here is speculative.
 
 This file is the source of truth for future changes. If a new feature contradicts anything below, the principle wins unless the user explicitly revises it.
 
@@ -11,7 +11,7 @@ This file is the source of truth for future changes. If a new feature contradict
 ## 0. Working with the user
 
 These rules shape *how* you (Claude Code, or any agent) collaborate on
-Slate. They override any conflicting default behaviour.
+clawdSlate. They override any conflicting default behaviour.
 
 - **Every instruction is executed.** If the user gives an instruction
   and you decide to prioritise a different task first, record the
@@ -35,11 +35,11 @@ Slate. They override any conflicting default behaviour.
   and first-run flows must be tested on a real version bump before
   being declared done. "The code looks right" has failed Fathom (the
   upstream project) at least once (Squirrel.Mac / ad-hoc signing
-  incident) — Slate inherits that lesson by construction (no Squirrel,
+  incident) — clawdSlate inherits that lesson by construction (no Squirrel,
   one-script install/update via `install.sh`), but the verification
   rule still holds: don't rely on "the code looks right."
 
-- **Agent harness is a first-class artefact.** Slate isn't just
+- **Agent harness is a first-class artefact.** clawdSlate isn't just
   shipped software; it's shipped software plus the agent tooling that
   tests and ships it. New gestures, new controls, new release flows
   all require updating the corresponding `.claude/skills/` file so the
@@ -47,11 +47,11 @@ Slate. They override any conflicting default behaviour.
 
 - **Design-pattern check runs on every controls change.** When you
   touch keyboard shortcuts, paste flow behaviour, refinement chat
-  semantics, or the install/update flow, invoke the `slate-ux-review`
+  semantics, or the install/update flow, invoke the `clawdslate-ux-review`
   skill (or its checklist) before committing. UX regressions are
   regressions.
 
-- **Communication matches the dev workflow.** Slate is a dev-first
+- **Communication matches the dev workflow.** clawdSlate is a dev-first
   tool — we build, ship, and update it via terminal. Our external
   communication must reflect that ordering: the terminal install is
   the *primary* path everywhere it shows up (README, docs home,
@@ -59,16 +59,16 @@ Slate. They override any conflicting default behaviour.
   link to a Mac-install section — never the hero CTA, never
   accompanied by an app-store-style icon. Every contributor surface
   should read "we use our own CLI; here is that CLI." See
-  `.claude/skills/slate-communication.md` for the typographic +
+  `.claude/skills/clawdslate-communication.md` for the typographic +
   copy rules that enforce this.
 
 - **Pre-release QA is mandatory.** Every release runs through
-  `.claude/skills/slate-qa.md`'s canonical flow before the tag is
+  `.claude/skills/clawdslate-qa.md`'s canonical flow before the tag is
   pushed. Typecheck is free; state+logs check is cheap; screenshot
   grading is the critical step that catches "canvas empty after
   generate" and its cousins. Do not declare a release done on the
   basis of "the code looks right" — that has now misled us multiple
-  times across Fathom and Slate.
+  times across Fathom and clawdSlate.
 
 - **Reported-failure retrospection.** When the user reports that a
   fix we've already shipped isn't actually working for them, treat
@@ -87,9 +87,9 @@ Slate. They override any conflicting default behaviour.
      into this file or into the relevant `.claude/skills/*` file so
      the next session inherits it. Skills are the harness; treat
      them as code.
-  4. **Skill-level detectable.** Ask: could `slate-ux-review` catch
+  4. **Skill-level detectable.** Ask: could `clawdslate-ux-review` catch
      this regression just by reading the diff? If not, add the rule.
-     Same for `slate-e2e-test` — is there a flow that would have
+     Same for `clawdslate-e2e-test` — is there a flow that would have
      exposed this? Add it.
 
 - **Agent harness as a first-class product.** We're not only building
@@ -100,7 +100,7 @@ Slate. They override any conflicting default behaviour.
   instrumentation — fix the harness, not just the symptom.
 
 - **The orchestrator is a CEO, not an IC. Route work; don't do it.**
-  (Sharpened 2026-04-27 in Fathom; applies verbatim to Slate.) The
+  (Sharpened 2026-04-27 in Fathom; applies verbatim to clawdSlate.) The
   orchestrator's job is to dispatch teammates, set quality bars,
   route critiques, retire members — not to read PNGs, edit code, run
   smoke, or grade renders. Even when the work looks like it would
@@ -147,14 +147,14 @@ Slate. They override any conflicting default behaviour.
     legitimate retry I will write is one the underlying platform's
     contract explicitly requires (e.g. fetching with a documented
     `Retry-After` header against a documented 429 ceiling) — not
-    speculative defense against unknown intermittency. Slate's
+    speculative defense against unknown intermittency. clawdSlate's
     pipeline embodies this: there is **zero** retry logic in
     `src/pipeline.ts`; if `create_view` is called zero times, the
     caller decides whether to retry, not the library.
   - **No fallbacks for things that should work.** A fallback is
     "this code path failed but here's a worse one we'll quietly
     take." Pre-empt the failure or fix the path; don't half-fail
-    silently. Counter-example we rejected: an early Slate version
+    silently. Counter-example we rejected: an early clawdSlate version
     auto-substituted a hand-authored placeholder scene when
     `create_view` returned no elements. The right answer was to
     surface the empty state to the host and let it decide.
@@ -180,7 +180,7 @@ Slate. They override any conflicting default behaviour.
   **isolate the broken part** and iterate on it alone. Don't
   repeatedly rebuild the whole app, regenerate expensive AI outputs,
   and re-test end-to-end when the bug is in one downstream stage.
-  For Slate: if the rendered diagram is wrong but the `create_view`
+  For clawdSlate: if the rendered diagram is wrong but the `create_view`
   JSON is correct (saved to disk), the bug is in the
   `<Whiteboard>` render layer or the renderer's
   `convertToExcalidrawElements` step — debug there with a saved
@@ -207,11 +207,11 @@ Slate. They override any conflicting default behaviour.
   2026-04-25). The close-the-loop principle below applies to the
   *implementer team* (Claude Code agents shipping code). It also
   applies to **AI agents inside the product** that generate visual
-  artefacts (diagrams, images, layouts). For Slate this is less
+  artefacts (diagrams, images, layouts). For clawdSlate this is less
   load-bearing than for Fathom (Fathom shipped an in-product Pass
-  2.5 visual self-critique loop; Slate threw it out because the
+  2.5 visual self-critique loop; clawdSlate threw it out because the
   simpler pipeline produced better diagrams in fewer turns). But
-  the principle still applies if a future Slate feature
+  the principle still applies if a future clawdSlate feature
   reintroduces a critique stage: the AI that emits the JSON cannot
   trust that JSON until it has *seen* the rendered output and
   judged it against the spec. Generation-without-looking is a
@@ -219,7 +219,7 @@ Slate. They override any conflicting default behaviour.
   teammate or an in-product Claude call.
 
 - **Team-orchestration rules live in `.claude/TEAMS.md`** (established
-  2026-04-26 in Fathom; ported to Slate 2026-04-30). All standing
+  2026-04-26 in Fathom; ported to clawdSlate 2026-04-30). All standing
   rules for how the orchestrator runs the team — visual-artefact
   iteration loops, critics-as-user-proxies, signal-equivalence vs
   theater, team hygiene (≤6 active members), standup polling,
@@ -231,15 +231,15 @@ Slate. They override any conflicting default behaviour.
   playbook for the agent harness. (Critic rubrics live separately
   at `.claude/critics/<name>.md`; that file is the durable home for
   any standing rubric a critic teammate must inherit at spawn.
-  Slate ships one rubric, `whiteboard.md`, since the whiteboard IS
-  Slate.)
+  clawdSlate ships one rubric, `whiteboard.md`, since the whiteboard IS
+  clawdSlate.)
 
 - **Impl teammates diagnose, then STOP — no edits without explicit
   task assignment, no mutation of user state ever** (CORE,
   established 2026-04-28, full text in TEAMS.md §6). Investigation
   dispatches return a structured report; the orchestrator decides
   whether and where to apply a fix. The user's live
-  `~/Library/Application Support/Slate/sessions/last/`, build
+  `~/Library/Application Support/clawdSlate/sessions/last/`, build
   artefacts, logs, and pasted content are read-only from impl
   teammates. A single edit-before-task-assigned event triggers
   retirement.
@@ -252,7 +252,7 @@ Slate. They override any conflicting default behaviour.
   manner or by not disrupting my current screen, because I might be
   on another window as well doing something. They can use
   AppleScript or whatever they want."*). Acceptable QA = launch an
-  isolated Slate against `/tmp/slate-test-<hash>` user-data dir,
+  isolated clawdSlate against `/tmp/clawdslate-test-<hash>` user-data dir,
   drive via AppleScript / Electron remote debugging /
   Playwright-electron, position off-screen or hide. Unacceptable QA
   = grading source-code logic without driving a running instance,
@@ -276,7 +276,7 @@ Slate. They override any conflicting default behaviour.
   (established 2026-04-25 in Fathom). The user has explicitly
   granted standing approval for the whiteboard generation pipeline
   (~$0.95/paper one-time + ~$0.10–$0.30/refinement). Sub-agents
-  that produce visual artefacts via the Slate pipeline do not
+  that produce visual artefacts via the clawdSlate pipeline do not
   require per-spend confirmation. *New* AI features that introduce
   a different cost profile (e.g. cross-paper queries, video
   generation, model upgrades that change pricing) still require a
@@ -317,7 +317,7 @@ Slate. They override any conflicting default behaviour.
     works* — the pipeline, the prompts, the design decisions, the
     failure modes — in plain language, not as a code reference. The
     user must be able to read that doc and reason about whether the
-    approach is correct without opening any `.ts` file. Slate's
+    approach is correct without opening any `.ts` file. clawdSlate's
     methodology lives at [`docs/methodology/index.md`](docs/methodology/index.md).
   - **Every non-trivial subsystem ships with structured logging the
     user can see** — both renderer-visible activity log and
@@ -362,7 +362,7 @@ Slate. They override any conflicting default behaviour.
 >   release discipline.
 >
 > Communication principles (voice, copy, typography enforcement) live
-> in `.claude/skills/slate-communication.md` rather than this file
+> in `.claude/skills/clawdslate-communication.md` rather than this file
 > because they're routinely consulted as a checklist by the agent
 > harness when copy or visuals change.
 
@@ -380,16 +380,16 @@ Slate. They override any conflicting default behaviour.
   user — the principle wins.
 
 - **The reader should never have to leave the surface.** What
-  Fathom calls "never leave the document" Slate phrases as "never
+  Fathom calls "never leave the document" clawdSlate phrases as "never
   leave the canvas." The chat input, the activity log, the
   refinement loop — all sit alongside the canvas, never behind a
   modal, never in another window.
 
 - **Persist by default.** Once the user has paid the API cost
-  (~$0.95) to generate a whiteboard, regenerating it because Slate
+  (~$0.95) to generate a whiteboard, regenerating it because clawdSlate
   forgot to save is a design failure. The session canvas survives
   app restart unless the user explicitly clicks regenerate. (User
-  verbatim from Fathom, transferred to Slate: *"Once I have
+  verbatim from Fathom, transferred to clawdSlate: *"Once I have
   generated the whiteboard, the whiteboard should be there even the
   next time when I open it. I shouldn't have to remake it. We
   should save the whiteboard, and unless the user clears the
@@ -398,7 +398,7 @@ Slate. They override any conflicting default behaviour.
   "Regenerate"; (b) the user manually deletes the session dir.
   Anything else is a bug.
 
-- **Two distribution modes, one component.** Slate is the
+- **Two distribution modes, one component.** clawdSlate is the
   standalone Mac app; `fathom-whiteboard` is the npm package; both
   render the same React component against the same Node pipeline.
   A behaviour change has to happen in one place. Fathom (the
@@ -433,12 +433,12 @@ Slate. They override any conflicting default behaviour.
   scaffold cannot fix it. The design must instead create a
   **forcing function**: a low-cost surface the user *measurably
   interacts with* as a side effect of the behavior we want, not
-  as a separate decision. Slate's example: the chat input lives
+  as a separate decision. clawdSlate's example: the chat input lives
   next to the canvas — typing a refinement is the side-effect of
   thinking about what to change, not a separate "open the
   refinement panel" decision.
 
-- **AI-built product, audited via methodology + logs.** Slate is
+- **AI-built product, audited via methodology + logs.** clawdSlate is
   built by AI agents working with one human PM. The PM does not
   read the source. They read the product, the methodology page,
   and the activity log. Therefore: every non-trivial subsystem
@@ -448,14 +448,14 @@ Slate. They override any conflicting default behaviour.
 
 ## 2. Design principles
 
-These are about *feel* — how Slate looks, moves, and rewards the
+These are about *feel* — how clawdSlate looks, moves, and rewards the
 user's actions. Apple-level smoothness is the bar.
 
 ### 2.1 The canvas is editable, always
 
 What the agent draws is real Excalidraw elements — not a generated
 PNG, not a screenshot. The user can move, rewrite, recolour, and
-annotate any of it without leaving Slate. The agent's output is
+annotate any of it without leaving clawdSlate. The agent's output is
 the user's starting point, not the destination.
 
 - After a generate run, the canvas is *theirs*. Refinements add
@@ -513,13 +513,13 @@ together as a sequence of revealed thoughts).
 
 - **Handwritten = voice, sans = information.** Excalifont is
   reserved for places where a human is speaking directly to the
-  reader (Slate wordmark, tagline, the inside of the Excalidraw
+  reader (clawdSlate wordmark, tagline, the inside of the Excalidraw
   canvas because that's the editor's font). Everything else —
   navigation, buttons, tables, code blocks, metadata, error
   text, download controls — uses system sans so it scans fast.
   Handwriting stops being special once it's everywhere; treat it
   as a scarce resource. The full enforcement rules live in
-  `.claude/skills/slate-communication.md`.
+  `.claude/skills/clawdslate-communication.md`.
 - **Icons explain themselves on hover.** Every icon-only or
   icon-heavy control has a `title=` (tooltip) and `aria-label`
   that names its purpose AND its keyboard shortcut.
@@ -537,7 +537,7 @@ together as a sequence of revealed thoughts).
   particular angle ("focus on the loss function," "explain the
   cache architecture"), they type that as part of the initial
   message — it becomes the `focus` block in `buildUserMessage`.
-- **The agent does not prompt.** Slate doesn't ship pre-canned
+- **The agent does not prompt.** clawdSlate doesn't ship pre-canned
   question buttons or "click here for a definition" controls.
   The user types what they want; the agent answers that.
 - **Refinement is single-input.** A chat input with a Send button
@@ -602,7 +602,7 @@ else is a thin strip alongside it.
   equations, or sub-systems, each piece must be framed as the
   **answer to a specific question** that traces back to the
   **ground problem the paper is solving**. This is encoded in
-  Slate's `SYSTEM_SUFFIX` (`## 2. Ground-problem framing`); the
+  clawdSlate's `SYSTEM_SUFFIX` (`## 2. Ground-problem framing`); the
   whiteboard critic rubric grades against it.
 - **Use diagrams when structure matters.** Default to including
   evidence artefacts (equations, mini-tables, callouts) when
@@ -610,7 +610,7 @@ else is a thin strip alongside it.
   relationship between components. Excalidraw-style hand-drawn
   is the aesthetic — rounded rects, soft strokes, warm beige
   for the focused component, handwritten labels.
-- **Ground every diagram in what the user pasted.** Slate
+- **Ground every diagram in what the user pasted.** clawdSlate
   hands the agent the pasted content directly; the agent reads
   it. No retrieval, no embeddings, no general-purpose web
   lookup. If the diagram is wrong, the user can read the same
@@ -629,7 +629,7 @@ else is a thin strip alongside it.
   if a paste exceeds context, the SDK surfaces the limit error
   and the host can decide whether to chunk.
 - **`settingSources: []`.** When the host has its own `CLAUDE.md`
-  (Fathom embeds Slate), that file does NOT leak into the run.
+  (Fathom embeds clawdSlate), that file does NOT leak into the run.
   The agent runs against exactly the prompt we authored, nothing
   else. This is a hard isolation boundary.
 
@@ -640,7 +640,7 @@ else is a thin strip alongside it.
   management.
 - **The SKILL prompt is doing the heavy lifting.** Read it
   (`src/SKILL.md`). It's a 24KB design playbook the pipeline
-  delivers verbatim to the model. Slate's job is to deliver it
+  delivers verbatim to the model. clawdSlate's job is to deliver it
   intact and stay out of the agent's way.
 - **The SYSTEM_SUFFIX is short on purpose.** It adds:
   (1) tool mechanics (`read_me` once, multiple `create_view`
@@ -656,7 +656,7 @@ else is a thin strip alongside it.
     call as it lands.
   - The streaming text: every `[assistant]` block as Claude emits.
   - The cost: the `[result] turns=N usd=X` line at the end.
-  - Rich diagnostic logs in DevTools (`[Slate …]`,
+  - Rich diagnostic logs in DevTools (`[clawdSlate …]`,
     `[fathom-whiteboard …]`).
 
 ## 8. Engineering principles
@@ -664,13 +664,13 @@ else is a thin strip alongside it.
 - **Tools enforce constraints; prompts only guide intent.** When
   a structural defect (text overflow, element overlap, missing
   label) shows up, the fix belongs at a layer *we control*, not
-  as another paragraph of system-prompt nudging. Slate's layers
+  as another paragraph of system-prompt nudging. clawdSlate's layers
   in upstream-to-downstream order: SKILL → SYSTEM_SUFFIX →
   `buildUserMessage` → `resolveSceneFromInput` →
   `Whiteboard.tsx` render path. For each defect class, choose
   the highest-leverage layer. Prompt-only fixes are local to one
   artefact; structural fixes catch the whole class. See
-  `.claude/skills/slate-tool-design.md` for the worked
+  `.claude/skills/clawdslate-tool-design.md` for the worked
   application.
 - **Step-by-step diagnosis before assuming.** When something
   breaks, find the failure point via logs, DOM inspection, or a
@@ -695,10 +695,10 @@ else is a thin strip alongside it.
 
 ## 9. Engineering principles — persistence model
 
-All session state for Slate lives under `~/Library/Application Support/Slate/sessions/last/`. This is the per-session sidecar; the "last" dir is the working session and it survives app restart.
+All session state for clawdSlate lives under `~/Library/Application Support/clawdSlate/sessions/last/`. This is the per-session sidecar; the "last" dir is the working session and it survives app restart.
 
 ```
-~/Library/Application Support/Slate/sessions/last/
+~/Library/Application Support/clawdSlate/sessions/last/
   whiteboard.excalidraw           # full Excalidraw scene file
                                   # ({ type, version, source, elements,
                                   #   appState }) — round-trips through
@@ -737,8 +737,8 @@ The pipeline doesn't know or care which host it's running in.
 
 The persistence invariant: **the user's session state is sacred**
 (CLAUDE.md §0). No impl agent overwrites
-`~/Library/Application Support/Slate/sessions/last/` from a
-diagnosis dispatch. QA agents test against `/tmp/slate-test-<hash>/`
+`~/Library/Application Support/clawdSlate/sessions/last/` from a
+diagnosis dispatch. QA agents test against `/tmp/clawdslate-test-<hash>/`
 isolated dirs.
 
 ## 10. Non-goals (things we have been explicitly told not to build)
@@ -753,7 +753,7 @@ isolated dirs.
   it locked the agent into a small set of layouts and
   *suppressed* quality. The current shape lets the SKILL
   playbook do its job, unconstrained.
-- No multi-Pass / critic loop in the pipeline. Pre-pivot Slate
+- No multi-Pass / critic loop in the pipeline. Pre-pivot clawdSlate
   had Pass 1 (read paper into 1M context), Pass 2 (plan + emit
   a scene), Pass 2.5 (render to PNG, vision-critique, iterate
   up to 3 rounds). We threw it out because the simpler pipeline
@@ -761,19 +761,19 @@ isolated dirs.
   future feature needs critic-style iteration, it gets justified
   per-feature, not added back as default.
 - No infinite-canvas zoom UI beyond Excalidraw's built-in pinch.
-  Slate uses the editor's canvas as-is; we do not layer a
+  clawdSlate uses the editor's canvas as-is; we do not layer a
   "minimap" or "zoom-to-section" overlay.
-- No built-in image generation. Slate explains what the user
+- No built-in image generation. clawdSlate explains what the user
   pastes; it does not invent imagery.
 - No auto-explain. The user types the prompt; the agent answers
   that. We do not pre-generate a default response on paste alone
   unless the user explicitly hits Return without modification.
-- No vendor lock-in. Slate runs on the user's existing Claude
-  subscription. There's no Slate-branded API key, no Slate
-  billing, no Slate-hosted MCP that we charge for. Most
-  whiteboard tools want a vendor relationship; Slate is a Mac
+- No vendor lock-in. clawdSlate runs on the user's existing Claude
+  subscription. There's no clawdSlate-branded API key, no clawdSlate
+  billing, no clawdSlate-hosted MCP that we charge for. Most
+  whiteboard tools want a vendor relationship; clawdSlate is a Mac
   app you compiled yourself.
-- No marketing telemetry. Slate doesn't phone home about what
+- No marketing telemetry. clawdSlate doesn't phone home about what
   you paste, what you draw, or how often you use it.
 
 ---
@@ -794,19 +794,19 @@ rule overrides.
   glyph signals the same thing in roughly half the foveal-acuity
   span and dissolves into the visual rhythm without inviting
   comprehension. Cross-references:
-  `.claude/skills/slate-cog-review.md` §3 (Doherty's threshold)
+  `.claude/skills/clawdslate-cog-review.md` §3 (Doherty's threshold)
   and §4 (foveal acuity ~2°). Counter-example: persistent state
   changes (a generate has completed, an update is ready to
   install) DO get plain English text, because the user is being
   asked to remember or act on them.
 
-- **Logs use `[Slate …]` (Electron host) and
+- **Logs use `[clawdSlate …]` (Electron host) and
   `[fathom-whiteboard …]` (npm package pipeline) prefixes.**
   Same lines surface in both DevTools and the in-app activity
   log. A single grep across either substrate should triage any
   user report.
 
-- **The `slate` launcher's `update` subcommand re-runs
+- **The `clawdslate` launcher's `update` subcommand re-runs
   `install.sh`.** Don't add a separate update mechanism. One
   script, two surfaces (terminal direct + launcher subcommand).
 
@@ -815,10 +815,10 @@ rule overrides.
 ## Appendix
 
 This file's structure is modelled on Fathom's CLAUDE.md (the
-research-paper reader Slate was extracted from). Most of §0 is
+research-paper reader clawdSlate was extracted from). Most of §0 is
 universal AI-collaboration guidance ported verbatim because the
 rules apply equally to any product built by AI agents with a
-human PM. §1–§10 are Slate-specific: the product, design,
+human PM. §1–§10 are clawdSlate-specific: the product, design,
 scientific, and engineering principles tailored to a
 paste-driven canvas-first whiteboard rather than a PDF reader.
 

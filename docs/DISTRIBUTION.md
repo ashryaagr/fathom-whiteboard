@@ -6,7 +6,7 @@ permalink: /DISTRIBUTION/
 
 # Distribution strategy
 
-Slate is distributed without an Apple Developer ID. This page documents
+clawdSlate is distributed without an Apple Developer ID. This page documents
 how that constraint shapes every install and update path, and why the
 design converges on one script — `install.sh` — powering both.
 
@@ -37,11 +37,11 @@ code failed to satisfy specified code requirement(s)
 ### Option A — DMG
 
 ```
-Slate-arm64.dmg  →  drag to /Applications  →  right-click → Open (once)
+clawdSlate-arm64.dmg  →  drag to /Applications  →  right-click → Open (once)
 ```
 
 Familiar to any Mac user. What 80% of users will reach for. Ships the
-exact same `Slate.app` that Option B delivers.
+exact same `clawdSlate.app` that Option B delivers.
 
 ### Option B — `install.sh` via curl
 
@@ -52,15 +52,15 @@ curl -fsSL …/install.sh | bash
 Same as the install flow developers know from Claude Code, `rustup`,
 `nvm`, `deno`, Homebrew. The script:
 
-1. Downloads `Slate-arm64.zip` from GitHub Releases.
-2. Extracts to `/Applications/Slate.app` (or `~/Applications/` on
+1. Downloads `clawdSlate-arm64.zip` from GitHub Releases.
+2. Extracts to `/Applications/clawdSlate.app` (or `~/Applications/` on
    managed Macs where `/Applications` isn't writable).
 3. Clears the `com.apple.quarantine` extended attribute — `curl`
    doesn't set it the way Safari does, so Gatekeeper treats the
    extracted bundle as a locally-built app and doesn't prompt. **No
    right-click → Open ritual.**
 4. Re-applies ad-hoc signing so the loader stays happy.
-5. Installs a `slate` launcher at `~/.local/bin/slate` for terminal
+5. Installs a `clawdslate` launcher at `~/.local/bin/clawdslate` for terminal
    use.
 
 For users who distrust piping curl into bash (a healthy instinct), the
@@ -70,27 +70,27 @@ pattern. The script is ~230 lines of readable shell.
 ## Why the same script also powers updates
 
 Auto-updating is exactly the same problem as first-install: replace an
-existing `Slate.app` bundle with a new one. Once we have a script that
+existing `clawdSlate.app` bundle with a new one. Once we have a script that
 does this correctly for the install case, there's no reason to write a
 *second* mechanism for updates.
 
-Slate's update mechanism is intentionally simple: the user re-runs
+clawdSlate's update mechanism is intentionally simple: the user re-runs
 `install.sh`, either directly (`curl … | bash`) or via the bundled
-`slate` launcher (`slate update`). The launcher's `update` subcommand
+`clawdslate` launcher (`clawdslate update`). The launcher's `update` subcommand
 fetches and runs the latest `install.sh` from main:
 
 ```bash
-slate update
+clawdslate update
 # is equivalent to
-exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh)"
+exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh)"
 ```
 
 The script:
 
-1. Sees the existing `/Applications/Slate.app`, treats this as an
+1. Sees the existing `/Applications/clawdSlate.app`, treats this as an
    update.
-2. Downloads the latest `Slate-arm64.zip`.
-3. Optionally `--wait-pid <pid>` — waits for the running Slate to
+2. Downloads the latest `clawdSlate-arm64.zip`.
+3. Optionally `--wait-pid <pid>` — waits for the running clawdSlate to
    exit before swapping the bundle. The launcher passes this when
    invoked from inside the running app (future capability).
 4. Replaces the bundle, clears quarantine, re-signs, relaunches.
@@ -101,7 +101,7 @@ Squirrel, no DMG mount.
 
 **Critically, this works identically regardless of whether the user
 installed via DMG or via curl.** Both paths produced the same
-`Slate.app`; both are updated by the same script.
+`clawdSlate.app`; both are updated by the same script.
 
 ## Why this design
 
@@ -115,14 +115,14 @@ installed via DMG or via curl.** Both paths produced the same
    for users who expect curl-pipe-bash. Neither camp is asked to
    adopt the other camp's ritual.
 4. **Auditable.** The script is in the repo, reviewable on GitHub,
-   readable in ~230 lines. The launcher (`slate`) is a thin wrapper
+   readable in ~230 lines. The launcher (`clawdslate`) is a thin wrapper
    that shells out to the same script.
 
 ## When to revisit
 
 We'd switch to Developer ID signing when any of these become true:
 
-- **Slate ships to a non-technical audience at scale.** First-install
+- **clawdSlate ships to a non-technical audience at scale.** First-install
   friction (the right-click → Open ritual for DMG users) is a real
   drop-off point for users who aren't developers. Developer ID removes
   it.
@@ -150,27 +150,27 @@ docs/DISTRIBUTION.md                # this file
 ## Testing a release end-to-end
 
 Per the lesson learned the hard way (Fathom's v1.0.0 → v1.0.1 shipped
-with a broken Squirrel-based update path; Slate adopts that lesson by
+with a broken Squirrel-based update path; clawdSlate adopts that lesson by
 construction), every release **must** be tested on a real version
 bump before being declared done:
 
 ```bash
 # Install v(N) on a clean machine
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
-open -a Slate     # verify it launches
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh | bash
+open -a clawdSlate     # verify it launches
 
 # Ship v(N+1) to GitHub Releases
 npm run dist:mac
-gh release create v(N+1) release/Slate-arm64.{dmg,zip}
+gh release create v(N+1) release/clawdSlate-arm64.{dmg,zip}
 
 # In the running v(N) app's terminal:
-slate update
-# Expect: "Updating Slate…" → app vanishes → relaunches at v(N+1)
-slate --version    # confirms v(N+1)
+clawdslate update
+# Expect: "Updating clawdSlate…" → app vanishes → relaunches at v(N+1)
+clawdslate --version    # confirms v(N+1)
 ```
 
 This loop is captured as a skill for the agent harness: see
-[`.claude/skills/slate-release.md`]({{ '/release-skill' | relative_url }})
+[`.claude/skills/clawdslate-release.md`]({{ '/release-skill' | relative_url }})
 in the source tree.
 
 ## What we don't do (and why)

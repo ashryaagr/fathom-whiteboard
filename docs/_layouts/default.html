@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>{% if page.url == '/' %}Slate — Paste anything. Get a whiteboard.{% else %}{{ page.title | default: page.name | replace: '.md', '' }} · Slate{% endif %}</title>
+  <title>{% if page.url == '/' %}clawdSlate — Paste anything. Get a whiteboard.{% else %}{{ page.title | default: page.name | replace: '.md', '' }} · clawdSlate{% endif %}</title>
   <meta name="description" content="{{ page.description | default: site.description }}">
   <link rel="icon" href="{{ '/assets/icon.png' | relative_url }}" type="image/png">
   <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
-  <meta property="og:title" content="Slate — Paste anything. Get a whiteboard.">
+  <meta property="og:title" content="clawdSlate — Paste anything. Get a whiteboard.">
   <meta property="og:description" content="A standalone Mac app for paste-driven whiteboard brainstorming with Claude. Free and open source.">
   <meta property="og:image" content="{{ '/assets/icon.png' | absolute_url }}">
   <meta name="theme-color" content="#faf4e8">
@@ -18,13 +18,13 @@
 <nav class="site-nav">
   <a class="brand" href="{{ '/' | relative_url }}">
     <img src="{{ '/assets/icon.png' | relative_url }}" alt="" width="26" height="26">
-    <span>Slate</span>
+    <span>clawdSlate</span>
   </a>
   <div class="nav-links">
     <a href="{{ '/INSTALL' | relative_url }}">Install</a>
     <a href="{{ '/methodology' | relative_url }}">Methodology</a>
     <a href="{{ '/PRINCIPLES' | relative_url }}">Principles</a>
-    <a class="github-link" href="https://github.com/ashryaagr/slate" target="_blank" rel="noopener">
+    <a class="github-link" href="https://github.com/ashryaagr/clawdslate" target="_blank" rel="noopener">
       GitHub
       <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M3 8 L8 3 M8 3 L4 3 M8 3 L8 7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -35,19 +35,19 @@
 
 {% if page.url == '/' %}
 <header class="hero">
-  <h1 class="hero-title">Slate</h1>
+  <h1 class="hero-title">clawdSlate</h1>
   <p class="hero-caption">Paste anything. Get a whiteboard.</p>
 
   <!--
-    Primary install path is the terminal. Slate is a dev-first tool;
+    Primary install path is the terminal. clawdSlate is a dev-first tool;
     its install should look like the tools its audience already uses.
     The curl chip is the hero CTA. The DMG link is a subordinate text
     link below, routing to the Mac install section of the install
     guide.
   -->
   <div class="install-chip" role="group" aria-label="Install command">
-    <code id="install-command" class="install-chip-code">curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash</code>
-    <button type="button" class="install-chip-copy" onclick="slateCopyInstall(this)" aria-label="Copy install command">
+    <code id="install-command" class="install-chip-code">curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh | bash</code>
+    <button type="button" class="install-chip-copy" onclick="clawdslateCopyInstall(this)" aria-label="Copy install command">
       <svg class="install-chip-copy-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="9" y="9" width="12" height="12" rx="2.5"/>
         <path d="M5 15 L5 5 L15 5"/>
@@ -56,7 +56,7 @@
     </button>
   </div>
   <p class="install-meta">
-    Apple Silicon · adds a <code>slate</code> launcher · no Gatekeeper prompt
+    Apple Silicon · adds a <code>clawdslate</code> launcher · no Gatekeeper prompt
   </p>
 
   <p class="install-alt">
@@ -66,7 +66,7 @@
 </header>
 
 <script>
-  function slateCopyInstall(btn) {
+  function clawdslateCopyInstall(btn) {
     var cmd = document.getElementById('install-command').textContent.trim();
     var fallback = function () {
       var ta = document.createElement('textarea');
@@ -99,16 +99,16 @@
   <div class="footer-inner">
     <div class="footer-brand">
       <img src="{{ '/assets/icon.png' | relative_url }}" alt="" width="22" height="22">
-      <span>Slate</span>
+      <span>clawdSlate</span>
     </div>
     <div class="footer-links">
-      <a href="https://github.com/ashryaagr/slate">Source</a>
-      <a href="https://github.com/ashryaagr/slate/releases">Releases</a>
-      <a href="https://github.com/ashryaagr/slate/issues">Issues</a>
-      <a href="https://github.com/ashryaagr/slate/blob/main/LICENSE">MIT</a>
+      <a href="https://github.com/ashryaagr/clawdslate">Source</a>
+      <a href="https://github.com/ashryaagr/clawdslate/releases">Releases</a>
+      <a href="https://github.com/ashryaagr/clawdslate/issues">Issues</a>
+      <a href="https://github.com/ashryaagr/clawdslate/blob/main/LICENSE">MIT</a>
     </div>
     <p class="footer-note">
-      Slate is a side project, not a company. No telemetry, no accounts, no analytics.
+      clawdSlate is a side project, not a company. No telemetry, no accounts, no analytics.
     </p>
   </div>
 </footer>

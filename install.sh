@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Slate installer + updater.
+# clawdSlate installer + updater.
 #
 # This one script is both:
 #   - the first-time installer (curl … | bash)
@@ -8,21 +8,21 @@
 #
 # It avoids the DMG / Squirrel.Mac path because those require a stable
 # code-signing identity across builds, which we don't have (we ad-hoc
-# sign every release). Instead we treat Slate.app as a plain ZIP
+# sign every release). Instead we treat clawdSlate.app as a plain ZIP
 # archive: download → extract → ad-hoc re-sign → clear quarantine →
 # launch. This works indefinitely with ad-hoc signing and needs zero
 # GUI steps.
 #
 # Usage:
 #   # First install
-#   curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh | bash
 #
 #   # Install a specific version
 #   curl … | bash -s -- --version v0.1.8
 #
 #   # Update from an already-downloaded zip (used when you grabbed the
 #   # zip manually instead of via the registry path)
-#   ./install.sh --from-zip /tmp/slate.zip --relaunch
+#   ./install.sh --from-zip /tmp/clawdslate.zip --relaunch
 #
 #   # Uninstall
 #   ./install.sh --uninstall
@@ -30,10 +30,10 @@
 set -euo pipefail
 
 REPO_OWNER="ashryaagr"
-REPO_NAME="slate"
-APP_NAME="Slate"
+REPO_NAME="clawdslate"
+APP_NAME="clawdSlate"
 BUNDLE_NAME="${APP_NAME}.app"
-LAUNCHER_NAME="slate"
+LAUNCHER_NAME="clawdslate"
 
 # --- Flags -----------------------------------------------------------------
 
@@ -65,7 +65,7 @@ die() { printf "Error: %s\n" "$*" >&2; exit 1; }
 
 # --- OS + arch sanity checks ----------------------------------------------
 
-[[ "$(uname)" == "Darwin" ]] || die "Slate only runs on macOS."
+[[ "$(uname)" == "Darwin" ]] || die "clawdSlate only runs on macOS."
 
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
@@ -91,17 +91,17 @@ LAUNCHER_PATH="${LAUNCHER_DIR}/${LAUNCHER_NAME}"
 # --- Uninstall ------------------------------------------------------------
 
 if [[ $UNINSTALL -eq 1 ]]; then
-  log "Uninstalling Slate from ${APP_PATH}…"
+  log "Uninstalling clawdSlate from ${APP_PATH}…"
   rm -rf "$APP_PATH" || true
   rm -f "$LAUNCHER_PATH" || true
-  log "Done. (Per-session canvas state under ~/Library/Application Support/Slate is untouched.)"
+  log "Done. (Per-session canvas state under ~/Library/Application Support/clawdSlate is untouched.)"
   exit 0
 fi
 
 # --- Wait on a running copy ----------------------------------------------
 
 if [[ -n "$WAIT_PID" ]]; then
-  log "Waiting for Slate (pid $WAIT_PID) to exit…"
+  log "Waiting for clawdSlate (pid $WAIT_PID) to exit…"
   for _ in $(seq 1 75); do
     if ! kill -0 "$WAIT_PID" 2>/dev/null; then break; fi
     sleep 0.2
@@ -110,7 +110,7 @@ fi
 
 # --- Acquire the zip ------------------------------------------------------
 
-WORK_DIR="$(mktemp -d /tmp/slate-install.XXXXXX)"
+WORK_DIR="$(mktemp -d /tmp/clawdslate-install.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 ZIP_PATH="${WORK_DIR}/${APP_NAME}-${ARCH}.zip"
 
@@ -121,11 +121,11 @@ if [[ -n "$FROM_ZIP" ]]; then
 else
   if [[ -z "$VERSION" ]]; then
     URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/${APP_NAME}-${ARCH}.zip"
-    log "Fetching latest Slate…"
+    log "Fetching latest clawdSlate…"
   else
     [[ "$VERSION" == v* ]] || VERSION="v${VERSION}"
     URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${VERSION}/${APP_NAME}-${ARCH}.zip"
-    log "Fetching Slate ${VERSION}…"
+    log "Fetching clawdSlate ${VERSION}…"
   fi
   curl -fL --retry 3 --retry-delay 1 -o "$ZIP_PATH" "$URL" \
     || die "Download failed. Check your internet connection, or pass --version explicitly."
@@ -164,40 +164,40 @@ else
   log "codesign not found on PATH — skipping ad-hoc signature."
 fi
 
-# --- Install the slate CLI launcher --------------------------------------
+# --- Install the clawdslate CLI launcher --------------------------------------
 
 log "Installing CLI launcher at ${LAUNCHER_PATH}…"
 mkdir -p "$LAUNCHER_DIR"
 cat > "$LAUNCHER_PATH" <<'LAUNCHER_EOF'
 #!/usr/bin/env bash
-# Slate CLI — thin wrapper that launches the Slate.app.
+# clawdSlate CLI — thin wrapper that launches the clawdSlate.app.
 #
 # Usage:
-#   slate                    # open Slate
-#   slate update             # pull the latest version
-#   slate --version          # print the installed version
-#   slate uninstall          # remove Slate
+#   clawdslate                    # open clawdSlate
+#   clawdslate update             # pull the latest version
+#   clawdslate --version          # print the installed version
+#   clawdslate uninstall          # remove clawdSlate
 
 set -e
 
-APP_NAME="Slate"
+APP_NAME="clawdSlate"
 if [[ -d "/Applications/${APP_NAME}.app" ]]; then
   APP="/Applications/${APP_NAME}.app"
 elif [[ -d "${HOME}/Applications/${APP_NAME}.app" ]]; then
   APP="${HOME}/Applications/${APP_NAME}.app"
 else
-  echo "Slate not installed. Run:" >&2
-  echo "  curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash" >&2
+  echo "clawdSlate not installed. Run:" >&2
+  echo "  curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh | bash" >&2
   exit 1
 fi
 
 case "${1:-}" in
   update)
-    echo "Updating Slate…"
-    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh)"
+    echo "Updating clawdSlate…"
+    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh)"
     ;;
   uninstall)
-    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh) --uninstall"
+    exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh) --uninstall"
     ;;
   --version|-v|version)
     PLIST="${APP}/Contents/Info.plist"
@@ -232,17 +232,17 @@ fi
 # --- Relaunch / final message ---------------------------------------------
 
 if [[ $RELAUNCH -eq 1 ]]; then
-  log "Relaunching Slate…"
+  log "Relaunching clawdSlate…"
   open -a "$APP_PATH" || true
   exit 0
 fi
 
-log "Launching Slate…"
+log "Launching clawdSlate…"
 open -a "$APP_PATH" || true
 
 log ""
-log "✓ Slate installed to ${APP_PATH}"
+log "✓ clawdSlate installed to ${APP_PATH}"
 log ""
 log "Terminal shortcuts (if ~/.local/bin is on PATH):"
-log "  slate                    # launch Slate"
-log "  slate update             # pull the latest version"
+log "  clawdslate                    # launch clawdSlate"
+log "  clawdslate update             # pull the latest version"

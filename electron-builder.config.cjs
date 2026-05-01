@@ -1,7 +1,7 @@
 /**
- * electron-builder config for Slate (the standalone whiteboard app).
+ * electron-builder config for clawdSlate (the standalone whiteboard app).
  *
- * Slate is published from this repo alongside the npm package
+ * clawdSlate is published from this repo alongside the npm package
  * `fathom-whiteboard`. Two distinct artifacts share one source tree:
  *  - `dist/` is the npm-published library (consumed by Fathom).
  *  - `release/` is the Mac app bundle (this config's output).
@@ -23,8 +23,8 @@
 const { execSync } = require('node:child_process');
 
 module.exports = {
-  appId: 'com.ashrya.slate',
-  productName: 'Slate',
+  appId: 'com.ashrya.clawdslate',
+  productName: 'clawdSlate',
   directories: {
     // Keep electron-builder out of the lib's `dist/` directory.
     output: 'release',
@@ -69,7 +69,7 @@ module.exports = {
     // the spawned process gets a real path.
     'vendor/excalidraw-mcp/**',
     // The Claude Agent SDK spawns a bundled `claude` binary. Same asar
-    // restriction. Slate threads `pathToClaudeCodeExecutable` through
+    // restriction. clawdSlate threads `pathToClaudeCodeExecutable` through
     // `runAgent` opts; in this packaged app the SDK's default
     // resolution lands inside app.asar without unpack and the spawn
     // fails with ENOTDIR (~126ms). Mirror Fathom's pattern.
@@ -77,7 +77,7 @@ module.exports = {
   ],
   // Versionless asset names so /releases/latest/download/<asset>
   // always resolves to current.
-  artifactName: 'Slate-${arch}.${ext}',
+  artifactName: 'clawdSlate-${arch}.${ext}',
   mac: {
     category: 'public.app-category.productivity',
     target: [{ target: 'dmg' }, { target: 'zip' }],
@@ -97,10 +97,10 @@ module.exports = {
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,
-    artifactName: 'Slate-Setup-${version}-${arch}.${ext}',
+    artifactName: 'clawdSlate-Setup-${version}-${arch}.${ext}',
   },
   dmg: {
-    title: 'Slate ${version}',
+    title: 'clawdSlate ${version}',
     sign: false,
     icon: 'app/icon.icns',
     window: { width: 540, height: 380 },
@@ -109,7 +109,7 @@ module.exports = {
       { x: 410, y: 180, type: 'link', path: '/Applications' },
     ],
   },
-  // Slate has no native modules and the vendored excalidraw-mcp is
+  // clawdSlate has no native modules and the vendored excalidraw-mcp is
   // pre-built on disk before this runs. Skip rebuild + skip running
   // postinstall hooks at packaging time.
   npmRebuild: false,
@@ -118,7 +118,7 @@ module.exports = {
     {
       provider: 'github',
       owner: 'ashryaagr',
-      repo: 'slate',
+      repo: 'clawdslate',
       releaseType: 'release',
     },
   ],

@@ -1,17 +1,17 @@
 ---
-name: slate-communication
-description: The single agent for Slate's voice, copy, typography, and aesthetic. Run before any change that touches user-facing words or visuals — README, docs site, in-app copy, welcome screens, update toasts, error messages, release notes, hero imagery, fonts.
+name: clawdslate-communication
+description: The single agent for clawdSlate's voice, copy, typography, and aesthetic. Run before any change that touches user-facing words or visuals — README, docs site, in-app copy, welcome screens, update toasts, error messages, release notes, hero imagery, fonts.
 type: skill
 ---
 
-# Slate communication
+# clawdSlate communication
 
-One agent, one set of rules, for every place where Slate speaks or
+One agent, one set of rules, for every place where clawdSlate speaks or
 shows itself to a person. Voice, copy, typography, and visual feel
 are inseparable — treat them as one surface.
 
 Not *branding*, not *marketing*. Those words imply persuasion from
-outside. Slate is shipped by the person who built it for themselves,
+outside. clawdSlate is shipped by the person who built it for themselves,
 so the communication is reporting, not selling. Keep it that way.
 
 ## When to use this skill
@@ -21,7 +21,7 @@ Invoke before any change that touches:
 - README, docs site (`docs/**`), in-app dialogs, toasts, tooltips,
   menu labels, error text.
 - Release notes, GitHub release title, commit message subject lines.
-- The Slate wordmark, hero, icon, any visual element that's
+- The clawdSlate wordmark, hero, icon, any visual element that's
   first-seen.
 - Fonts and color choices anywhere.
 
@@ -30,7 +30,7 @@ Invoke before any change that touches:
 1. **Report, don't persuade.** Tell what is, not what should be felt.
    The reader decides. ✓ *"Paste anything; get a whiteboard."* ✗ *"The
    most powerful brainstorming experience ever."*
-2. **First-person singular is allowed.** Slate is made by one
+2. **First-person singular is allowed.** clawdSlate is made by one
    person, and that shows. It's honest, not unprofessional. ✓ *"I
    built the canvas I wanted."*
 3. **Concrete > abstract.** A specific action ("paste a paragraph,
@@ -45,7 +45,7 @@ Invoke before any change that touches:
    are rented words. Write it again.
 6. **Never market in commit messages or release notes.** "v0.1.9:
    paste prompt placement, refinement abort, install.sh PATH hint" —
-   not "v0.1.9: a beautiful new Slate experience". Commits describe
+   not "v0.1.9: a beautiful new clawdSlate experience". Commits describe
    change; they don't sell it.
 7. **Don't rewrite the author's voice.** If a file already carries
    the author's phrasing — informal asides, opinionated framing, the
@@ -84,14 +84,14 @@ Use it sparingly so the stopping actually happens.
 On the **docs site** (`docs/**`) — a Jekyll site we style ourselves,
 so we can load the Excalifont woff2 file and apply it — use
 Excalifont only for:
-- The Slate wordmark.
+- The clawdSlate wordmark.
 - The tagline beneath it.
 - Any "Built alongside Fathom" / origin-story section — the
   author's voice.
 
 In the **app** (`app/renderer/**` and the embedded `<Whiteboard>`
 component) use Excalifont for:
-- The Slate wordmark on the welcome / paste-prompt screen.
+- The clawdSlate wordmark on the welcome / paste-prompt screen.
 - Tagline text.
 - Any text rendered *inside* the Excalidraw canvas — those use
   Excalifont natively because that's the editor's font.
@@ -111,7 +111,7 @@ unsearchable, and wastes bytes. The native-markdown pattern for a
 > research-paper reader with a per-paper whiteboard tab — it became
 > clear that the whiteboard surface was useful on its own. So I
 > extracted the same component into a standalone Mac app — and
-> that's Slate.
+> that's clawdSlate.
 ```
 
 The vertical-bar indent GitHub renders is the voice signal.
@@ -132,9 +132,9 @@ special once everything is handwritten.
 
 ## Platform affordances
 
-- **The terminal install is the PRIMARY CTA, everywhere.** Slate's
+- **The terminal install is the PRIMARY CTA, everywhere.** clawdSlate's
   build / ship / update workflow is terminal-first
-  (`install.sh`, the `slate` launcher, `slate update`), and the
+  (`install.sh`, the `clawdslate` launcher, `clawdslate update`), and the
   external communication must reflect that. Any install surface —
   README, docs home hero, `INSTALL.md`, in-app about, release
   notes — leads with the `curl … | bash` chip, sized to announce
@@ -174,13 +174,13 @@ special once everything is handwritten.
 Before calling a copy/visual change done, walk through:
 
 1. Would a **busy researcher** (the target user) skim this and
-   understand what Slate is in 10 seconds?
+   understand what clawdSlate is in 10 seconds?
 2. Is anything here persuasive where it should be descriptive?
 3. Are the handwritten/sans choices aligned with the voice/info
    split above — or did handwriting creep into "information"
    territory?
 4. Did the change touch any copy in a location that
-   `slate-ux-review` would audit for accessibility, locale, or
+   `clawdslate-ux-review` would audit for accessibility, locale, or
    keyboard affordances? Run that skill too if so.
 
 ## Pitfalls to avoid
@@ -195,8 +195,8 @@ Before calling a copy/visual change done, walk through:
 - **Mixing voices.** If the welcome card talks like a founder and
   the update toast talks like a compiler, the user senses two
   people. Match.
-- **Treating Slate as Fathom-derived in the public copy.** The
+- **Treating clawdSlate as Fathom-derived in the public copy.** The
   README's "Built alongside Fathom" section names the lineage
-  honestly, but Slate's value prop stands on its own — paste-driven
-  brainstorming. Don't write Slate as "the whiteboard tab without
+  honestly, but clawdSlate's value prop stands on its own — paste-driven
+  brainstorming. Don't write clawdSlate as "the whiteboard tab without
   the PDF reader." Write it as what it is.

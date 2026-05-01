@@ -1,11 +1,11 @@
-title: Slate
+title: clawdSlate
 description: Paste anything. Get a whiteboard.
 url: https://ashryaagr.github.io
-baseurl: /slate
+baseurl: /clawdslate
 show_downloads: false
 github:
   is_project_page: true
-  repository_url: https://github.com/ashryaagr/slate
+  repository_url: https://github.com/ashryaagr/clawdslate
 
 theme: jekyll-theme-cayman
 remote_theme: pages-themes/cayman@v0.2.0

@@ -1,12 +1,12 @@
 ---
-name: slate-ux-review
-description: Review Slate control / paste-flow / install / update changes against macOS conventions and Apple HIG. Run this BEFORE committing any diff that touches the paste prompt, refinement chat, canvas keyboard shortcuts, or the install/update flow.
+name: clawdslate-ux-review
+description: Review clawdSlate control / paste-flow / install / update changes against macOS conventions and Apple HIG. Run this BEFORE committing any diff that touches the paste prompt, refinement chat, canvas keyboard shortcuts, or the install/update flow.
 type: skill
 ---
 
-# Slate UX design-pattern review
+# clawdSlate UX design-pattern review
 
-Slate aims for an Apple-level feel. Every control earns that by
+clawdSlate aims for an Apple-level feel. Every control earns that by
 matching intuitive patterns the user already knows from other Mac apps,
 Safari, and the macOS system itself. **A control is worse than not
 having it at all if it misleads the user about what it does.**
@@ -33,14 +33,14 @@ diff touches:
 
 ### 1. Keyboard convention is intuitive on Mac
 
-- `⌘ V` = Paste. Every paste surface in Slate handles `paste` events
+- `⌘ V` = Paste. Every paste surface in clawdSlate handles `paste` events
   natively — text, image, file. Don't override this.
 - `⌘ Return` (or just `Return` in a single-line input) = Submit. The
   chat input in `<Whiteboard>` should accept Return as send and
   Shift+Return as newline (multi-line refinement asks).
 - `Esc` = Abort the current generate/refine run if one is in flight.
   Same Esc on a free canvas closes the chat overlay (if any).
-- `⌘ ,` = Preferences (when Slate has any). Not Settings (App Store
+- `⌘ ,` = Preferences (when clawdSlate has any). Not Settings (App Store
   naming), not in Help.
 
 ### 1a. React selector / state convention
@@ -48,7 +48,7 @@ diff touches:
 Recurring class of bug across React state libraries: shipped a
 "Maximum update depth exceeded" infinite-loop because a selector
 returned a freshly-allocated value every render. Same rule applies
-in Slate even though the surface is smaller:
+in clawdSlate even though the surface is smaller:
 
 ```ts
 // ❌ WRONG — `?? []` allocates a new array each render
@@ -94,7 +94,7 @@ happen**. Don't preventDefault. Don't show an animation.
 
 ### 3. Platform conventions hold
 
-- `⌘ O` = Open. (Slate has nothing to open in the standalone v0.1.x;
+- `⌘ O` = Open. (clawdSlate has nothing to open in the standalone v0.1.x;
   reserve the shortcut.)
 - `⌘ ,` = Preferences.
 - `⌘ Q` = Quit.
@@ -131,7 +131,7 @@ failure.
 
 - No re-drag-to-Applications on update.
 - No re-approve in Privacy & Security.
-- `slate update` is the only command the user needs to remember.
+- `clawdslate update` is the only command the user needs to remember.
 - The user runs it, the app vanishes for ~5 seconds, the new
   version comes back.
 
@@ -166,7 +166,7 @@ new state.
 
 The `<Whiteboard>` React component is published as
 `fathom-whiteboard` on npm and embedded inside Fathom (and
-potentially future hosts). Every UX change in the Slate Electron
+potentially future hosts). Every UX change in the clawdSlate Electron
 shell that touches the component must:
 
 - Work identically inside an embedded host. The component
@@ -175,7 +175,7 @@ shell that touches the component must:
 - Add new host-methods only via the existing `WhiteboardHost`
   contract — don't reach into Electron globals from inside the
   React surface.
-- Be testable without launching the standalone Slate app — the
+- Be testable without launching the standalone clawdSlate app — the
   npm package consumer should be able to run a local mount.
 
 ### 11. Principle gate — placeholder UI must be marked SHIP-BLOCKING
@@ -194,7 +194,7 @@ scheduled item, and the next release MUST advance them.
 
 ### 12. No-frozen-UI rule
 
-Established in Slate from day one (CLAUDE.md §2). While the agent
+Established in clawdSlate from day one (CLAUDE.md §2). While the agent
 is drawing, the chat input stays editable; the user can type the
 next refinement, paste an image, or abort the run. A frozen input
 during a 60-second agent turn is a fatigue source we don't
@@ -221,5 +221,5 @@ behavior is a regression — reject the diff.
   Discoverability failures are silent — nobody reports a feature
   they couldn't see.
 - **"It's consistent with our own prior version" ≠ "it's
-  intuitive."** If an earlier version of Slate violated a macOS
+  intuitive."** If an earlier version of clawdSlate violated a macOS
   convention, the fix is to align, not to compound.

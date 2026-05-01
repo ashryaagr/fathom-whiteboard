@@ -1,12 +1,12 @@
 ---
-name: slate-e2e-test
-description: End-to-end test the packaged Slate.app via paste, keyboard, and screenshots, without a human at the trackpad. Use when verifying a feature works, reproducing a user-reported bug, or before calling a task done.
+name: clawdslate-e2e-test
+description: End-to-end test the packaged clawdSlate.app via paste, keyboard, and screenshots, without a human at the trackpad. Use when verifying a feature works, reproducing a user-reported bug, or before calling a task done.
 type: skill
 ---
 
-# Slate end-to-end test harness
+# clawdSlate end-to-end test harness
 
-Slate is a desktop Mac app whose core interaction is **paste content,
+clawdSlate is a desktop Mac app whose core interaction is **paste content,
 hit return, watch the agent draw, refine via chat**. The whole flow
 is keyboard-reachable, so a computer-use agent can drive it via
 `osascript` (AppleScript) + `pbcopy` + `screencapture` even without a
@@ -18,17 +18,17 @@ trackpad. This skill is the playbook.
   refinement froze the canvas").
 - You just finished a change that touches the pipeline, the canvas,
   or any visible UI surface.
-- You want to verify a `slate-release.md` build hasn't regressed
+- You want to verify a `clawdslate-release.md` build hasn't regressed
   the golden path.
 
 ## The harness
 
-Slate doesn't ship a dedicated `fathom-test.sh` equivalent yet. The
+clawdSlate doesn't ship a dedicated `fathom-test.sh` equivalent yet. The
 existing scaffolding is:
 
 - `scripts/dist-smoke.sh` — currently being added; runs `dist:mac`
   and confirms the output bundle is launchable.
-- `npm run app` — launches Slate in dev mode (esbuild bundle of
+- `npm run app` — launches clawdSlate in dev mode (esbuild bundle of
   `app/main.ts`, then `electron app/dist/main.js`).
 - `npm run app:dev` — same but with `WB_DEVTOOLS=1` so DevTools
   attaches.
@@ -37,13 +37,13 @@ The harness commands you'll actually use:
 
 ```bash
 # Lifecycle
-pkill -x Slate                                # kill running instance
-open -a Slate                                 # launch packaged Slate
-open -a Slate --args --user-data-dir=/tmp/slate-test  # isolated test dir
+pkill -x clawdSlate                                # kill running instance
+open -a clawdSlate                                 # launch packaged clawdSlate
+open -a clawdSlate --args --user-data-dir=/tmp/clawdslate-test  # isolated test dir
 
 # Pixels
-screencapture -x /tmp/slate-shots/<name>.png  # full-screen capture
-screencapture -x -R x,y,w,h /tmp/slate-shots/<name>.png  # region
+screencapture -x /tmp/clawdslate-shots/<name>.png  # full-screen capture
+screencapture -x -R x,y,w,h /tmp/clawdslate-shots/<name>.png  # region
 
 # Direct controls (via AppleScript)
 osascript -e 'tell application "System Events" to keystroke "v" using {command down}'  # ⌘V
@@ -66,33 +66,33 @@ Chrome DevTools Protocol.
 Run this before declaring any non-trivial change done.
 
 ```bash
-# 1. Clean slate (literally) — isolated test user-data dir
-TEST_DIR="/tmp/slate-test-$(date +%s)"
+# 1. Clean clawdslate (literally) — isolated test user-data dir
+TEST_DIR="/tmp/clawdslate-test-$(date +%s)"
 rm -rf "$TEST_DIR"
-pkill -x Slate || true
-open -a Slate --args --user-data-dir="$TEST_DIR"
+pkill -x clawdSlate || true
+open -a clawdSlate --args --user-data-dir="$TEST_DIR"
 sleep 3
-screencapture -x /tmp/slate-shots/01-welcome.png
+screencapture -x /tmp/clawdslate-shots/01-welcome.png
 # Expect: empty canvas with paste prompt visible at the bottom.
 
 # 2. Paste a sample abstract via clipboard + ⌘V
 pbcopy < samples/abstract.txt   # ~2KB markdown
 osascript -e 'tell application "System Events" to keystroke "v" using {command down}'
 sleep 1
-screencapture -x /tmp/slate-shots/02-pasted.png
+screencapture -x /tmp/clawdslate-shots/02-pasted.png
 # Expect: paste prompt now showing the pasted content (or an indicator
 # that content is queued); chat input ready.
 
 # 3. Submit the generate run
 osascript -e 'tell application "System Events" to key code 36'  # Return
 sleep 5
-screencapture -x /tmp/slate-shots/03-streaming.png
+screencapture -x /tmp/clawdslate-shots/03-streaming.png
 # Expect: activity log showing [tool_use] mcp__excalidraw__read_me;
 # canvas beginning to render; "abort" button visible.
 
 # 4. Wait for generation to finish (~60s for a small abstract)
 sleep 60
-screencapture -x /tmp/slate-shots/04-done.png
+screencapture -x /tmp/clawdslate-shots/04-done.png
 # Expect: canvas with completed diagram, activity log shows
 # [result] turns=N usd=X. Chat input is editable (no frozen-UI).
 
@@ -100,7 +100,7 @@ screencapture -x /tmp/slate-shots/04-done.png
 osascript -e 'tell application "System Events" to keystroke "make the loss equation a key callout"'
 osascript -e 'tell application "System Events" to key code 36'  # Return
 sleep 30
-screencapture -x /tmp/slate-shots/05-refined.png
+screencapture -x /tmp/clawdslate-shots/05-refined.png
 # Expect: canvas updated with the requested change; new activity-log
 # entries; scene file regrown on disk.
 
@@ -114,15 +114,15 @@ console.log('elements:', s.elements.length);
 # Expect: > 0 elements
 
 # 7. Restart and verify persistence
-pkill -x Slate
+pkill -x clawdSlate
 sleep 2
-open -a Slate --args --user-data-dir="$TEST_DIR"
+open -a clawdSlate --args --user-data-dir="$TEST_DIR"
 sleep 4
-screencapture -x /tmp/slate-shots/07-restored.png
+screencapture -x /tmp/clawdslate-shots/07-restored.png
 # Expect: same canvas as 05-refined (CLAUDE.md §1 "Persist by default").
 
 # 8. Cleanup
-pkill -x Slate
+pkill -x clawdSlate
 rm -rf "$TEST_DIR"
 ```
 
@@ -130,8 +130,8 @@ rm -rf "$TEST_DIR"
 
 ```bash
 # Reset
-TEST_DIR="/tmp/slate-test-abort-$(date +%s)"
-open -a Slate --args --user-data-dir="$TEST_DIR"
+TEST_DIR="/tmp/clawdslate-test-abort-$(date +%s)"
+open -a clawdSlate --args --user-data-dir="$TEST_DIR"
 sleep 3
 
 # Paste long content (something the agent will spend 60s on)
@@ -143,18 +143,18 @@ osascript -e 'tell application "System Events" to key code 36'  # Return
 # Confirm chat input is editable mid-stream (CLAUDE.md §2)
 sleep 10
 osascript -e 'tell application "System Events" to keystroke "this is a refinement queued mid-run"'
-screencapture -x /tmp/slate-shots/abort-01-typed-during-stream.png
+screencapture -x /tmp/clawdslate-shots/abort-01-typed-during-stream.png
 # Expect: typed text visible in input — NOT frozen.
 
 # Abort
 osascript -e 'tell application "System Events" to key code 53'  # Esc
 sleep 2
-screencapture -x /tmp/slate-shots/abort-02-aborted.png
+screencapture -x /tmp/clawdslate-shots/abort-02-aborted.png
 # Expect: activity log shows [aborted] run cancelled by caller;
 # whatever scene the agent had partially produced is preserved.
 
 # Cleanup
-pkill -x Slate
+pkill -x clawdSlate
 rm -rf "$TEST_DIR"
 ```
 
@@ -165,9 +165,9 @@ log line, don't just say "it didn't work".
 
 ## What to Read vs what to screenshot
 
-- Screenshots (`.png` under `/tmp/slate-shots/`): use `Read` on the
+- Screenshots (`.png` under `/tmp/clawdslate-shots/`): use `Read` on the
   file path — the vision layer can parse the UI state.
-- Logs: capture lines prefixed `[Slate …]`, `[fathom-whiteboard …]`,
+- Logs: capture lines prefixed `[clawdSlate …]`, `[fathom-whiteboard …]`,
   `[assistant]`, `[tool_use]`, `[result]`. Most failures log a root
   cause before the user-visible symptom.
 
@@ -184,7 +184,7 @@ console (Cmd+Option+I, or launch with `WB_DEVTOOLS=1` env).
   multiple with `sleep` between them if animation correctness
   matters. For streaming animations, prefer a `screencapture -v`
   recording + ffmpeg frame-sample.
-- Any audio or haptic feedback (Slate uses neither).
+- Any audio or haptic feedback (clawdSlate uses neither).
 
 ## Before finishing
 

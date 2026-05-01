@@ -6,7 +6,7 @@ permalink: /DOCKER/
 
 # Dev container
 
-A Docker image with all the build-time dependencies needed to develop Slate without installing them on your host. **This is a build and test environment, not a runtime** — Electron's UI can't render in a headless Docker container. The final `.dmg` still has to be produced on macOS (for `iconutil` and native signing).
+A Docker image with all the build-time dependencies needed to develop clawdSlate without installing them on your host. **This is a build and test environment, not a runtime** — Electron's UI can't render in a headless Docker container. The final `.dmg` still has to be produced on macOS (for `iconutil` and native signing).
 
 ## What you can do inside the container
 
@@ -29,7 +29,7 @@ See `../Dockerfile` at the repo root (when present; the Dockerfile is optional a
 ## Build the image
 
 ```bash
-docker build -t slate-dev .
+docker build -t clawdslate-dev .
 ```
 
 ## Use the container as a dev shell
@@ -38,7 +38,7 @@ docker build -t slate-dev .
 docker run --rm -it \
   -v "$PWD":/workspace \
   -w /workspace \
-  slate-dev bash
+  clawdslate-dev bash
 ```
 
 Inside the container:

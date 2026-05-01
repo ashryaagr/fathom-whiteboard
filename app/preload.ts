@@ -12,6 +12,10 @@ const wbApi = {
     save: (p: PaperPayload): Promise<void> => ipcRenderer.invoke('paper:save', p),
     clear: (): Promise<void> => ipcRenderer.invoke('paper:clear'),
   },
+  session: {
+    archive: (): Promise<{ archivedAt: string | null }> =>
+      ipcRenderer.invoke('session:archive'),
+  },
   asset: {
     save: (filename: string, bytes: ArrayBuffer): Promise<{ absPath: string }> =>
       ipcRenderer.invoke('asset:save', { filename, bytes }),

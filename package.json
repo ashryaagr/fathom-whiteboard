@@ -6,7 +6,7 @@
   "author": "Ashrya <ashryaagr@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ashryaagr/slate.git"
+    "url": "git+https://github.com/ashryaagr/clawdslate.git"
   },
   "type": "module",
   "main": "dist/index.js",
@@ -38,6 +38,7 @@
     "app": "npm run app:build && electron app/dist/main.js",
     "app:dev": "npm run app:build && WB_DEVTOOLS=1 electron app/dist/main.js",
     "dist:mac": "npm run app:build && electron-builder --mac --arm64 --config electron-builder.config.cjs",
+    "dist:mac:fast": "npm run app:build && electron-builder --mac --arm64 --dir --config electron-builder.config.cjs",
     "dist:win": "npm run app:build && electron-builder --win --x64 --config electron-builder.config.cjs",
     "build:hero": "node scripts/build-hero.mjs"
   },

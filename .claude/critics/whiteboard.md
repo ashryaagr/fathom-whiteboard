@@ -35,7 +35,7 @@ modifiable layer of the pipeline:
 - *MCP / vendor*: "the upstream `excalidraw-mcp` should validate
   pseudo-element types before accepting them" (fixes the primitive). Note:
   this layer is mostly upstream and we do not patch it; surface the gap
-  but route through Slate's `resolveSceneFromInput` filtering when
+  but route through clawdSlate's `resolveSceneFromInput` filtering when
   possible.
 - *SKILL*: "`src/SKILL.md`'s evidence-artefacts section should explicitly
   state that math sections forbid rect containers, not just suggest"
@@ -81,16 +81,16 @@ below. A verdict of "ITERATE: zone-overlap on multi-view" without an
 upstream-fix ask is itself an incomplete grade.
 
 **For STRUCTURAL defects, recommend prompt-level fixes only as last
-resort; prefer fixes at the SKILL layer or the renderer.** Slate runs
+resort; prefer fixes at the SKILL layer or the renderer.** clawdSlate runs
 on the upstream `excalidraw-mcp` (we do not patch the MCP wrapper). The
 levers we control are:
 
 1. **`src/SKILL.md`** — durable design rules the agent reads on every
    run. Best place for "callouts must size to content," "math goes in
    big text + colored box, not shapes," "use the subject's vocabulary."
-2. **`SYSTEM_SUFFIX` in `src/pipeline.ts`** — Slate-specific layer on
+2. **`SYSTEM_SUFFIX` in `src/pipeline.ts`** — clawdSlate-specific layer on
    top of the SKILL. Best place for "ground-problem framing,"
-   "component-as-answer questions," and any Slate-specific UX
+   "component-as-answer questions," and any clawdSlate-specific UX
    constraint.
 3. **`resolveSceneFromInput` in `src/pipeline.ts`** — the only
    "wrapper" we have. Filters pseudo-element types, applies
@@ -272,7 +272,7 @@ across the canvas is REJECTED.
   that runs off-canvas, a callout with wrong proportions, an
   equation annotation that overflows. These are evidence the
   agent was emitting tool calls without first reasoning about
-  global layout. (In Slate's pipeline, this happens entirely
+  global layout. (In clawdSlate's pipeline, this happens entirely
   inside the agent's own reasoning — there is no separate
   planning pass.) Grading: persistent layout inconsistencies
   (≥2 sections with proportion or overflow problems) is REJECTED
@@ -286,7 +286,7 @@ across the canvas is REJECTED.
   how the underlying primitive is emitted. Grading: any visible
   text-overflow past a container's right or bottom edge is
   FAIL-class regardless of element type or how the agent chose
-  to emit it. Slate's primary lever here is the SKILL playbook
+  to emit it. clawdSlate's primary lever here is the SKILL playbook
   (which already covers wrap-aware sizing) — if a real defect
   shows, the recommendation is to strengthen the worked example
   in `src/SKILL.md` and add a render-side overflow visualisation
@@ -327,7 +327,7 @@ across the canvas is REJECTED.
   "modality matches content" — modality match is necessary but
   not sufficient; explanatory orientation toward the ground
   problem is a separate axis. APPROVED requires both. The
-  durable home for this rule in Slate is the SYSTEM_SUFFIX in
+  durable home for this rule in clawdSlate is the SYSTEM_SUFFIX in
   `src/pipeline.ts` (`## 2. Ground-problem framing`).
 
 - **APPROVED**: meets the reference-image bar. Multi-section,

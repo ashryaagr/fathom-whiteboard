@@ -1,13 +1,13 @@
 ---
-name: slate-retro
-description: The retrospection skill. Acts like an engineering manager running a performance review of Slate's agent harness — which skills pulled weight, which didn't, what's missing, what should be hired/fired/altered. Run after every release, after any significant incident, or whenever the harness feels like it's drifting.
+name: clawdslate-retro
+description: The retrospection skill. Acts like an engineering manager running a performance review of clawdSlate's agent harness — which skills pulled weight, which didn't, what's missing, what should be hired/fired/altered. Run after every release, after any significant incident, or whenever the harness feels like it's drifting.
 type: skill
 ---
 
-# Slate retrospection
+# clawdSlate retrospection
 
 A regular performance review of the agents, skills, and hooks that
-build Slate. Treat every skill in `.claude/skills/` as a team
+build clawdSlate. Treat every skill in `.claude/skills/` as a team
 member. Every commit-window hook, pre-push hook, build script as a
 process. Every CLAUDE.md rule as a working agreement. All of them
 should earn their place every cycle.
@@ -44,13 +44,13 @@ signal.
 ### 2. What it caught that humans wouldn't have
 
 Credit for catches the skill uniquely enabled. For example:
-`slate-qa` would catch the canvas-empty regression class on a
+`clawdslate-qa` would catch the canvas-empty regression class on a
 real version bump before it shipped. That's a hire-worthy
 contribution.
 
 ### 3. What it *missed* that it should have caught
 
-Charges against the skill. For example: an early `slate-release`
+Charges against the skill. For example: an early `clawdslate-release`
 might not have flagged that the `install.sh` PATH hint was
 missing for users on `/bin/zsh` with no `.zshrc` — the user hit
 the wall before the skill warned us. The skill has since been
@@ -88,20 +88,20 @@ A retro report at `.local/retros/<YYYY-MM-DD>-<label>.md`. Local
 only — gitignored. Format:
 
 ```markdown
-# Slate retrospection — <date> — <trigger>
+# clawdSlate retrospection — <date> — <trigger>
 
 ## Cycle summary
 <one paragraph: what shipped, what broke, what was the vibe>
 
 ## Team review
-### slate-qa
+### clawdslate-qa
 - Invoked: <X times>
 - Caught: <incidents>
 - Missed: <incidents>
 - Verdict: 🟢 Keep / 🟡 Alter / 🔴 Fire
 - If Alter: <specific changes, or "see diff below">
 
-### slate-release
+### clawdslate-release
 ...
 (every skill + every §0 rule + every hook)
 
@@ -160,8 +160,8 @@ A canonical invocation (from any agent session after a release):
   cycle. Some skills are insurance and will do nothing most of
   the time; that's fine. Grade on contribution, not attendance.
 - **Product-level scope creep.** The retro reviews the harness,
-  not the product. "Canvas felt clunky" is for `slate-ux-review`;
-  "nobody ran `slate-ux-review` before that canvas change landed"
+  not the product. "Canvas felt clunky" is for `clawdslate-ux-review`;
+  "nobody ran `clawdslate-ux-review` before that canvas change landed"
   is for the retro.
 - **Being diplomatic.** The review exists because diplomacy
   misses things. If a skill is dead weight, say so. If a rule
@@ -172,9 +172,9 @@ A canonical invocation (from any agent session after a release):
 (Illustrative only; the real retro reports live in
 `.local/retros/` (gitignored).)
 
-- 🟢 **Keep**: `slate-qa` — caught a canvas-empty regression
+- 🟢 **Keep**: `clawdslate-qa` — caught a canvas-empty regression
   before ship.
-- 🟡 **Alter**: `slate-release` — gained the migration-release
+- 🟡 **Alter**: `clawdslate-release` — gained the migration-release
   rule after the first time `install.sh` changed in a way users
   on the prior version couldn't auto-update through.
 - 🟢 **Keep** (with minor alter): the `dist-smoke.sh` script —

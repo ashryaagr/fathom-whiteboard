@@ -1,6 +1,6 @@
-# Slate-specific feature specs
+# clawdSlate-specific feature specs
 
-This directory holds PM-produced spec cards for non-trivial Slate
+This directory holds PM-produced spec cards for non-trivial clawdSlate
 features. One file per spec; format defined in
 [`../TEAMS.md`](../TEAMS.md) under "Spec card format."
 
@@ -12,7 +12,7 @@ the parent `.claude/` directory:
 - [`../critics/whiteboard.md`](../critics/whiteboard.md) — the standing
   rubric for `whiteboard-critic`.
 - [`../TEAMS.md`](../TEAMS.md) — orchestrator playbook.
-- [`../../CLAUDE.md`](../../CLAUDE.md) — Slate's authoritative
+- [`../../CLAUDE.md`](../../CLAUDE.md) — clawdSlate's authoritative
   governance doc.
 
 The specs in this folder are *transient* in the sense that each one

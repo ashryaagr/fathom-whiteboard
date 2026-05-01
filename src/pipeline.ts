@@ -228,7 +228,7 @@ async function runAgent(opts: {
   // path, but child_process.spawn() goes through the real filesystem and
   // sees `app.asar` as a FILE → ENOTDIR. Hosts that ship inside asar
   // (Fathom) must pre-resolve the unpacked binary path and pass it here;
-  // standalone Node hosts (Slate dev, raw library users) leave it unset
+  // standalone Node hosts (clawdSlate dev, raw library users) leave it unset
   // and the SDK default works.
   pathToClaudeCodeExecutable?: string;
   // Caller-supplied controller so the host can abort an in-flight run
@@ -277,6 +277,14 @@ async function runAgent(opts: {
       // authored, nothing else.
       settingSources: [],
       includePartialMessages: true,
+      // clawdSlate runs a single-purpose JSON-emission task (read_me, then
+      // create_view with thousands of tokens of Excalidraw scene). Opus
+      // is overkill for this — its strength is reasoning, but the
+      // bottleneck here is output token rate, where Sonnet runs ~3×
+      // faster and the diagram quality is comparable. Override per-run
+      // via SLATE_MODEL=claude-opus-4-7 if a particularly hard paper
+      // benefits from deeper planning.
+      model: process.env.SLATE_MODEL || 'claude-sonnet-4-6',
       ...(pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable }
         : {}),
@@ -287,6 +295,23 @@ async function runAgent(opts: {
   let scene: WhiteboardScene = { elements: [] };
   let turns = 0;
   let usd = 0;
+
+  // Timing checkpoints — emitted as `[timing] phase=… elapsed=…s` so
+  // the activity panel makes it obvious where seconds are going. Phases:
+  //   submit  → query() returned, stream awaiting
+  //   ttft    → first non-system event (model has actually started)
+  //   read_me → tool_use mcp__excalidraw__read_me went out
+  //   tool_result → first tool_result for read_me came back
+  //   create_view_start → input_json_delta begun for create_view
+  //   create_view_done  → block_stop for the create_view tool_use
+  //   total   → run finished
+  const t0 = Date.now();
+  const tElapsed = () => ((Date.now() - t0) / 1000).toFixed(2);
+  const checkpoint = (phase: string) => {
+    cb?.onLog?.(`[timing] ${phase} elapsed=${tElapsed()}s`);
+  };
+  let sawTtft = false;
+  checkpoint('submit');
 
   // Truncate-then-stringify for log lines. Tool inputs and results are
   // often large; we cap to keep the activity panel readable but still
@@ -302,8 +327,43 @@ async function runAgent(opts: {
     return `${s.slice(0, max)}… (+${s.length - max} chars)`;
   };
 
+  // Token-stream progress tracking. With `includePartialMessages: true`
+  // the SDK emits a `stream_event` for every delta the model produces.
+  // The big silent gap users hit is between `read_me` returning and the
+  // FULL `create_view` tool_use landing: the model is generating maybe
+  // 5–20KB of input_json_delta tokens for the scene description. Without
+  // surfacing those we look frozen. We log a heartbeat — current block
+  // type + accumulated bytes + elapsed since last log — at most every
+  // ~600ms so the activity panel doesn't flood.
+  let progressBytes = 0;
+  let progressBlockKind = '';
+  let progressLastFlush = 0;
+  let progressStart = 0;
+  const PROGRESS_FLUSH_MS = 600;
+  const flushProgress = (final = false) => {
+    if (progressBytes === 0 && !final) return;
+    const now = Date.now();
+    if (!final && now - progressLastFlush < PROGRESS_FLUSH_MS) return;
+    const elapsed = ((now - progressStart) / 1000).toFixed(1);
+    const kind = progressBlockKind || 'text';
+    cb?.onLog?.(
+      `[thinking] ${kind} streaming · ${progressBytes.toLocaleString()} chars · ${elapsed}s`,
+    );
+    progressLastFlush = now;
+  };
+  const resetProgress = () => {
+    progressBytes = 0;
+    progressBlockKind = '';
+    progressStart = Date.now();
+    progressLastFlush = 0;
+  };
+
   try {
   for await (const ev of stream) {
+    if (!sawTtft && ev.type !== 'system') {
+      sawTtft = true;
+      checkpoint('ttft');
+    }
     if (ev.type === 'assistant') {
       turns += 1;
       const blocks = (ev.message?.content ?? []) as unknown as Array<Record<string, unknown>>;
@@ -316,6 +376,8 @@ async function runAgent(opts: {
           const id = String(block.id ?? '');
           cb?.onToolUse?.(name, block.input);
           cb?.onLog?.(`[tool_use] ${name} ${id ? `id=${id.slice(0, 8)} ` : ''}input=${summarize(block.input, 400)}`);
+          if (name === 'mcp__excalidraw__read_me') checkpoint('read_me_call');
+          if (name === 'mcp__excalidraw__create_view') checkpoint('create_view_done');
           if (name === 'mcp__excalidraw__create_view') {
             const next = resolveSceneFromInput(block.input, scene);
             // Empty scene is a meaningful resolved state — e.g. agent
@@ -352,6 +414,7 @@ async function runAgent(opts: {
           cb?.onLog?.(
             `[tool_result] ${id ? `id=${id} ` : ''}${isErr ? 'ERROR ' : ''}${summarize(text, 800)}`,
           );
+          checkpoint('tool_result');
         }
       }
     } else if (ev.type === 'result') {
@@ -366,6 +429,46 @@ async function runAgent(opts: {
         const tools = ((ev as { tools?: string[] }).tools ?? []).join(',');
         const model = (ev as { model?: string }).model ?? '?';
         cb?.onLog?.(`[system] init model=${model} tools=${tools}`);
+      }
+    } else if (ev.type === 'stream_event') {
+      // Per-token deltas from the model. The SDK wraps Anthropic's
+      // raw message-stream API events: content_block_start carries the
+      // block kind (text vs tool_use) + name; content_block_delta
+      // carries `text_delta` for text or `input_json_delta` for tool
+      // input. We flush a heartbeat every ~600ms so the user sees
+      // continuous progress while the model writes a 5–20KB
+      // create_view input.
+      const inner = ((ev as unknown as { event?: Record<string, unknown> })
+        .event ?? {}) as Record<string, unknown>;
+      const innerType = String(inner.type ?? '');
+      if (innerType === 'content_block_start') {
+        resetProgress();
+        const cb2 = (inner.content_block ?? {}) as Record<string, unknown>;
+        const blockType = String(cb2.type ?? '');
+        if (blockType === 'tool_use') {
+          progressBlockKind = `tool_use ${String(cb2.name ?? '')}`;
+          if (String(cb2.name ?? '') === 'mcp__excalidraw__create_view') {
+            checkpoint('create_view_start');
+          }
+        } else if (blockType === 'text') {
+          progressBlockKind = 'assistant text';
+        } else {
+          progressBlockKind = blockType || 'block';
+        }
+        cb?.onLog?.(`[thinking] start ${progressBlockKind}`);
+      } else if (innerType === 'content_block_delta') {
+        const delta = (inner.delta ?? {}) as Record<string, unknown>;
+        const dt = String(delta.type ?? '');
+        if (dt === 'text_delta' && typeof delta.text === 'string') {
+          progressBytes += (delta.text as string).length;
+          cb?.onAssistantText?.(delta.text as string);
+          flushProgress();
+        } else if (dt === 'input_json_delta' && typeof delta.partial_json === 'string') {
+          progressBytes += (delta.partial_json as string).length;
+          flushProgress();
+        }
+      } else if (innerType === 'content_block_stop') {
+        flushProgress(true);
       }
     }
   }
@@ -383,6 +486,7 @@ async function runAgent(opts: {
     cb?.onLog?.('[aborted] run cancelled by caller');
   }
 
+  checkpoint('total');
   return { scene, turns, usd };
 }
 

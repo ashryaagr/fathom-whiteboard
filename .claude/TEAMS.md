@@ -1,20 +1,20 @@
 ---
-name: TEAMS — Slate development team architecture
+name: TEAMS — clawdSlate development team architecture
 type: doc
 ---
 
-# How Slate is built (the agent team philosophy)
+# How clawdSlate is built (the agent team philosophy)
 
-Slate isn't built by a single agent in a single thread. It's built
+clawdSlate isn't built by a single agent in a single thread. It's built
 by **specialised teammates that share scope** and a **cognitive-
 psychology reviewer** that has veto authority over any teammate's
 work. This file is the durable charter — every future session should
 read it before spawning sub-agents.
 
-Slate is a smaller surface than Fathom (one Electron shell + one
+clawdSlate is a smaller surface than Fathom (one Electron shell + one
 React component + one Node pipeline + one MCP launcher), so the
 team structure is narrower than Fathom's. Most rules below are
-universal; only the team roster section is Slate-specific.
+universal; only the team roster section is clawdSlate-specific.
 
 ## The close-the-loop principle (CORE — read first, established 2026-04-25)
 
@@ -24,7 +24,7 @@ Every implementer teammate operates under these rules:
 
 1. **Render against a real example before declaring done.** Pick an actual paper abstract, code architecture, or pasted PDF (or the bundled sample if no user content is available). Run the feature against it. Look at the output. If the output is bad — cluttered, wrong, slow, ugly — iterate. Re-render. Look again. Repeat until the output matches the spec's quality bar. *Then* report done. The first render of a feature is allowed to be wrong; what is not allowed is reporting done without looking.
 
-2. **A separate quality-verifier teammate may do the looking.** If the implementer is too close to their own code, spawn a dedicated `*-qa` teammate (e.g. `whiteboard-qa@slate-build`) that:
+2. **A separate quality-verifier teammate may do the looking.** If the implementer is too close to their own code, spawn a dedicated `*-qa` teammate (e.g. `whiteboard-qa@clawdslate-build`) that:
    - Drives the app via `scripts/dist-smoke.sh` or AppleScript / Electron remote debugging.
    - Captures the visible output (screenshots via `screencapture`, log tail, scene JSON inspection on disk).
    - Grades against the spec's stated quality bar (canvas quality per `.claude/critics/whiteboard.md`, latency targets, persistence correctness, abort behaviour, etc.).
@@ -202,7 +202,7 @@ When a teammate is "working" (orchestrator dispatched a task, no deliverable yet
 5. **Discovering a second issue mid-task**: SendMessage about it as a separate observation. Continue the assigned task only. The second issue does NOT roll into the same commit.
 
 **Never mutate user state without explicit authorization.** This is a hard rule, separate from the discipline above:
-- The user's live `~/Library/Application Support/Slate/sessions/last/` is sacred. No file overwrites, no deletions, no scene mutations from impl.
+- The user's live `~/Library/Application Support/clawdSlate/sessions/last/` is sacred. No file overwrites, no deletions, no scene mutations from impl.
 - The user's saved scenes / pasted content / viewport state are sacred. Read-only.
 - The user's build artefacts under `release/` are sacred unless the dispatch explicitly authorises a `dist:mac` re-run.
 - `git push --force`, `git reset --hard`, `git checkout` against uncommitted user work — all require explicit authorization.
@@ -217,28 +217,28 @@ When a teammate is "working" (orchestrator dispatched a task, no deliverable yet
 
 **QA verifies the user-visible product, not source code logic.** The standing failure mode this rule corrects: a qa teammate inspects the diff, says "logic is sound," and reports PASS — without ever observing the rendered output the user will see. That is not QA; that is code review by another name. Code review is a separate, fine activity, but a feature is not verified until a running instance has been driven through the user-facing flow and the user-visible surface has been observed.
 
-**QA must NOT disrupt the user's running session.** The user is doing other work in other windows. A QA test that takes focus, steals keyboard/mouse, surfaces a Slate window over what they're reading, or hangs their actual app instance is a regression in the harness — not a verification of it. Acceptable testing modes:
+**QA must NOT disrupt the user's running session.** The user is doing other work in other windows. A QA test that takes focus, steals keyboard/mouse, surfaces a clawdSlate window over what they're reading, or hangs their actual app instance is a regression in the harness — not a verification of it. Acceptable testing modes:
 
-1. **Isolated test instance against an isolated user-data dir.** Launch a separate Slate process pointing at `/tmp/slate-test-<hash>/` (or similar isolated dir) so it never touches the user's live state. macOS flag: pass `--user-data-dir=/tmp/slate-test-<hash>` to Electron, or configure `app.setPath('userData', ...)` in a test entrypoint. The isolated instance gets its own copy of any test content needed.
+1. **Isolated test instance against an isolated user-data dir.** Launch a separate clawdSlate process pointing at `/tmp/clawdslate-test-<hash>/` (or similar isolated dir) so it never touches the user's live state. macOS flag: pass `--user-data-dir=/tmp/clawdslate-test-<hash>` to Electron, or configure `app.setPath('userData', ...)` in a test entrypoint. The isolated instance gets its own copy of any test content needed.
 2. **Drive headlessly.** Possible drivers:
-   - **AppleScript** — `tell application "System Events" to tell process "Slate" to ...` for menu/keystroke automation, ideally on a hidden Space or off-screen window.
+   - **AppleScript** — `tell application "System Events" to tell process "clawdSlate" to ...` for menu/keystroke automation, ideally on a hidden Space or off-screen window.
    - **Electron's remote debugging protocol** — launch with `--remote-debugging-port=9222`, drive via Chrome DevTools Protocol (CDP) to read DOM, capture screenshots, dispatch events.
    - **Playwright-electron** — official Electron support for headless DOM driving.
 3. **Position the test instance off-screen or hidden.** AppleScript can move the window to negative coordinates; macOS Spaces can hide it; the test instance can be configured to launch with `show: false` for the BrowserWindow.
-4. **Read DOM + screenshots from the test instance, never from the user's running Slate.** A `shot` command that screenshots the user's actual app violates this rule even if it's "just one capture."
+4. **Read DOM + screenshots from the test instance, never from the user's running clawdSlate.** A `shot` command that screenshots the user's actual app violates this rule even if it's "just one capture."
 
-**QA must NEVER mutate the user's live state.** Read-only access to `~/Library/Application Support/Slate/sessions/last/`. The isolated test instance has its own session dir; QA can mutate that freely.
+**QA must NEVER mutate the user's live state.** Read-only access to `~/Library/Application Support/clawdSlate/sessions/last/`. The isolated test instance has its own session dir; QA can mutate that freely.
 
 **The verification format that closes a bug:**
 - **Status**: PASS / FAIL / PARTIAL on the first line.
 - **Surface tested**: which user-visible flow was driven (e.g. "Paste flow → text input → return → canvas stream").
 - **Visible-output check**: what the user would see — quote DOM presence, screenshot path, observable behavior. NOT "the code mounts the canvas correctly." Source-side claims do not close bugs.
-- **Log highlights**: relevant `[Slate]` / `[fathom-whiteboard]` / `[assistant]` / `[tool_use]` lines from the test instance's log.
+- **Log highlights**: relevant `[clawdSlate]` / `[fathom-whiteboard]` / `[assistant]` / `[tool_use]` lines from the test instance's log.
 - **File:line citations** for every claim about cause.
 
 **The qa-watcher (or any *-qa teammate) does NOT edit code.** Same discipline as §6 applies. Diagnostic findings → SendMessage to team-lead → wait for task assignment if a fix is needed.
 
-**Rationale**: the user's most expensive scarce resource is *not being interrupted while they work in another window*. Every QA check that takes over their screen, every Slate relaunch that requires their input, every "could you try X and tell me what happens?" prompt is the agent harness asking the user to be QA. The user explicitly built the harness so they wouldn't have to be QA. Headless + isolated is how the harness keeps that promise.
+**Rationale**: the user's most expensive scarce resource is *not being interrupted while they work in another window*. Every QA check that takes over their screen, every clawdSlate relaunch that requires their input, every "could you try X and tell me what happens?" prompt is the agent harness asking the user to be QA. The user explicitly built the harness so they wouldn't have to be QA. Headless + isolated is how the harness keeps that promise.
 
 **Spawn-prompt requirement**: every new qa teammate's spawn prompt must include this rule verbatim, with concrete instructions for the test-instance launch (the `--user-data-dir` flag, the AppleScript or CDP driver, the off-screen positioning) so the rule is operationally specific, not aspirational.
 
@@ -266,9 +266,9 @@ Three reasons.
    between a tool that is *technically correct* and a tool that is
    *actually usable on a long brainstorming session*.
 
-## The teams (Slate roster)
+## The teams (clawdSlate roster)
 
-Slate's surface is small enough that the team roster is narrower
+clawdSlate's surface is small enough that the team roster is narrower
 than Fathom's. Each teammate has a NAME, a SCOPE (file globs they
 own), a BRIEF (the philosophy they hold when making
 micro-decisions), and an EVIDENCE BAR (what they must cite in
@@ -284,7 +284,7 @@ that affects how the Agent SDK is invoked, what the system prompt
 contains, what tools the agent can reach.
 
 **Brief**: The pipeline's only job is to deliver the SKILL prompt
-intact and stay out of the agent's way. Pre-pivot Slate had three
+intact and stay out of the agent's way. Pre-pivot clawdSlate had three
 extra Pass layers, a custom MCP wrapper, a template library, and
 a vision-critique loop. We threw all of that out because it was
 *suppressing* quality. Don't add layers back. Every extra
@@ -321,7 +321,7 @@ the cognitive review (below) before merge.
 **Brief**: Install + update + crash-recovery are the path the
 user feels first. Everything in this team's scope must end-to-end
 verify on a real version bump before being declared done. Update
-`slate-qa.md` when a regression class is shipped twice. The
+`clawdslate-qa.md` when a regression class is shipped twice. The
 universal install/update script is `install.sh`; treat it as the
 single source of truth for both first-install and update.
 
@@ -335,7 +335,7 @@ explicitly marked as "docs/CI only, not runtime."
 output), the `fathom-whiteboard` npm publishing flow, the
 `exports` map, the README's embedded-host examples.
 
-**Brief**: Slate ships as both a Mac app and an npm package. The
+**Brief**: clawdSlate ships as both a Mac app and an npm package. The
 package consumer (Fathom embeds it; future hosts may too) must be
 able to mount `<Whiteboard host={...} />` and have generation work
 without writing a custom MCP wrapper. Changes to the package
@@ -484,7 +484,7 @@ the user with both perspectives named.
 
 Added because the product teams each have vertical scope. Nobody
 holds the horizontal view: how the type contract evolves between
-the npm package and the Slate Electron host, where tech debt is
+the npm package and the clawdSlate Electron host, where tech debt is
 accumulating, when the `WhiteboardHost` contract is about to
 ossify into a back-compat trap, when a refactor today saves a
 month of pain.
@@ -584,7 +584,7 @@ at the end. Both report to the user, not to the orchestrator.
 ## The cognitive-psychology reviewer
 
 Every team commit (or subagent output, before integration) goes
-through `.claude/skills/slate-cog-review.md`. The reviewer is
+through `.claude/skills/clawdslate-cog-review.md`. The reviewer is
 empowered to:
 
 - **APPROVE** with no changes — commits proceed
@@ -648,7 +648,7 @@ here, recommend chunking" is.
 - The user reports that something feels wrong but can't articulate
   why — spawn the reviewer to characterise the cognitive
   mismatch.
-- Before shipping a behavioural default that affects every Slate
+- Before shipping a behavioural default that affects every clawdSlate
   session (e.g. default zoom, default chat-input placement) — the
   reviewer suggests the research-backed value.
 
@@ -668,10 +668,10 @@ doubles.
 The team is OPERATIONAL via Claude Code's Teams API, not just a
 documented architecture. The live source of truth is:
 
-- **Team config**: `~/.claude/teams/slate-build/config.json` — the
+- **Team config**: `~/.claude/teams/clawdslate-build/config.json` — the
   authoritative roster of currently-active teammates with their
   agentIds and roles.
-- **Shared task list**: `~/.claude/tasks/slate-build/` — what's
+- **Shared task list**: `~/.claude/tasks/clawdslate-build/` — what's
   pending / in-flight / completed across the team.
 - **Spec cards**: `.claude/specs/*.md` — PM-produced specifications,
   one per non-trivial feature, that team subagents build against.
@@ -717,7 +717,7 @@ These are intentionally separate, with overlap only by accident:
   has shipped, what's queued, what's been dropped, why. Written
   in prose. Numbered for citation in commits ("todo #44").
   Survives across sessions.
-- **`~/.claude/tasks/slate-build/`** is the team's machine-
+- **`~/.claude/tasks/clawdslate-build/`** is the team's machine-
   readable task list — atomic units of work for teammates to
   claim and complete. Resets when the team is shut down. Tasks
   here often *reference* a `todo.md` number for context.
@@ -741,7 +741,7 @@ harness so the next session inherits the lesson.
 2. **Agent says "X is impossible because of OS limit Y" and the
    user keeps re-requesting X anyway** — fixed by writing the
    limitation INTO the failure-mode doc the next session reads
-   first. The `slate-cog-review.md` skill now records known limits
+   first. The `clawdslate-cog-review.md` skill now records known limits
    so the next session doesn't re-hit the same wall.
 
 3. **User edits files while teams are working** — the user is a
@@ -781,7 +781,7 @@ harness so the next session inherits the lesson.
      runs against the spec before declaring the round done.
 
 7. **Rebuild-during-use disrupts the user** — the orchestrator
-   was rebuilding + reinstalling `/Applications/Slate.app`
+   was rebuilding + reinstalling `/Applications/clawdSlate.app`
    between every small change while the user was actively using
    it. User explicit instruction (transferred verbatim from
    Fathom): *"only after you've accomplished all my tasks should

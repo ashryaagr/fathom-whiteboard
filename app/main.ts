@@ -22,6 +22,65 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
 
+// Resolve the bundled `claude` binary to its on-disk unpacked path so
+// child_process.spawn() doesn't trip over the asar virtual filesystem.
+//
+// The Claude Agent SDK computes its bundled binary path from
+// `import.meta.url`. Inside a packaged Electron app that path lives at
+// `…/Resources/app.asar/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`.
+// asar's hook lets `Read` see through the archive, but `spawn` goes
+// straight to the real filesystem and sees `app.asar` as a FILE →
+// ENOTDIR. electron-builder unpacks the platform package via
+// `asarUnpack`, so the binary is on disk under
+// `…/Resources/app.asar.unpacked/node_modules/…/claude`. We pre-resolve
+// to that path and pass it to generateWhiteboard / refineWhiteboard
+// via `pathToClaudeCodeExecutable`.
+function resolveClaudeExecutablePath(): string | undefined {
+  const platformPkg =
+    process.platform === 'darwin' && process.arch === 'arm64'
+      ? 'claude-agent-sdk-darwin-arm64'
+      : process.platform === 'darwin'
+        ? 'claude-agent-sdk-darwin-x64'
+        : process.platform === 'win32' && process.arch === 'x64'
+          ? 'claude-agent-sdk-win32-x64'
+          : null;
+  if (!platformPkg) return undefined;
+
+  const candidates = app.isPackaged
+    ? [
+        join(
+          process.resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          '@anthropic-ai',
+          platformPkg,
+          'claude',
+        ),
+      ]
+    : [
+        join(
+          app.getAppPath(),
+          'node_modules',
+          '@anthropic-ai',
+          platformPkg,
+          'claude',
+        ),
+      ];
+  // Common user-installed fallbacks if the bundled binary is missing
+  // (someone deleted it, dev runs without the native package, etc.).
+  const home = process.env.HOME ?? '';
+  const userFallbacks = home
+    ? [
+        join(home, '.local', 'bin', 'claude'),
+        join(home, '.claude', 'bin', 'claude'),
+      ]
+    : [];
+  for (const p of [...candidates, ...userFallbacks]) {
+    if (existsSync(p) && !p.includes('app.asar/')) return p;
+  }
+  return undefined;
+}
+
 // Per-session work dir holds pasted assets (images, PDFs) keyed by
 // session id, plus the persisted scene + viewport. We use a stable
 // "last session" dir so closing + reopening the app restores the
@@ -136,6 +195,35 @@ async function clearSession(): Promise<void> {
   }
 }
 
+// Move the current `sessions/last/` snapshot into a timestamped
+// archive dir so the user can come back to it later, then clear `last`.
+// Used by the "Save & New" path on the top-bar New button — the user
+// keeps a recoverable copy of the whiteboard they just left rather than
+// losing the API spend they paid to generate it.
+async function archiveSession(): Promise<{ archivedAt: string | null }> {
+  const root = app.getPath('userData');
+  const last = join(root, 'sessions', 'last');
+  const hasContent =
+    existsSync(join(last, PAPER_FILE)) ||
+    existsSync(join(last, SCENE_FILE));
+  if (!hasContent) return { archivedAt: null };
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const archiveDir = join(root, 'sessions', `archive-${ts}`);
+  await mkdir(archiveDir, { recursive: true });
+  for (const f of [SCENE_FILE, VIEWPORT_FILE, PAPER_FILE]) {
+    const src = join(last, f);
+    if (!existsSync(src)) continue;
+    try {
+      const data = await readFile(src);
+      await writeFile(join(archiveDir, f), data);
+    } catch {
+      /* best-effort copy; missing or unreadable file is fine */
+    }
+  }
+  return { archivedAt: archiveDir };
+}
+
 // Convert pasted content into a PaperRef the pipeline can consume.
 // Text is the primary path; images become markdown image references
 // in a synthetic paper; PDFs are saved as files and the agent reads
@@ -171,6 +259,7 @@ ipcMain.handle('paper:save', async (_e, payload: PaperPayload) => {
   await savePaper(payload);
 });
 ipcMain.handle('paper:clear', async () => clearSession());
+ipcMain.handle('session:archive', async () => archiveSession());
 ipcMain.handle('asset:save', async (_e, args: { filename: string; bytes: ArrayBuffer }) =>
   saveAsset(args),
 );
@@ -211,7 +300,7 @@ async function runStreamingGenerate(
       },
       undefined,
       focus,
-      undefined,
+      resolveClaudeExecutablePath(),
       abortController,
     );
     if (!sender.isDestroyed())
@@ -283,7 +372,7 @@ ipcMain.handle(
             },
           },
           undefined,
-          undefined,
+          resolveClaudeExecutablePath(),
           ctrl,
         );
         if (!sender.isDestroyed())
@@ -331,11 +420,11 @@ async function createWindow(): Promise<void> {
       }
     }
   }
-  app.setName('Slate');
+  app.setName('clawdSlate');
   const win = new BrowserWindow({
     width: 1240,
     height: 820,
-    title: 'Slate',
+    title: 'clawdSlate',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#f5f5f7',
     webPreferences: {
@@ -345,6 +434,17 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   });
+
+  // Forward renderer console to main-process stderr so a tail on the
+  // log file gives a single feed of both worlds. Cheap to leave on
+  // during dev/test; off-by-default in shipped builds via the env flag.
+  if (process.env.WB_DEVTOOLS === '1' || process.env.WB_FORWARD_CONSOLE === '1') {
+    win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+      const tag = ['v', 'i', 'w', 'e'][level] ?? '?';
+      const where = sourceId ? `${sourceId.split('/').pop()}:${line}` : '';
+      process.stderr.write(`[renderer ${tag}] ${message} ${where}\n`);
+    });
+  }
 
   if (isDev && process.env.WB_DEV_URL) {
     await win.loadURL(process.env.WB_DEV_URL);

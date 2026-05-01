@@ -1,12 +1,12 @@
 ---
-name: slate-cog-review
-description: Cognitive-psychology review for Slate UX changes. Run on every team commit before merge. Cites established cognition / perception research; vetoes anything that demonstrably violates working-memory, attention, or perceptual limits. Run automatically on diffs touching the paste flow, chat input, canvas defaults, or anything visible during a long brainstorming session.
+name: clawdslate-cog-review
+description: Cognitive-psychology review for clawdSlate UX changes. Run on every team commit before merge. Cites established cognition / perception research; vetoes anything that demonstrably violates working-memory, attention, or perceptual limits. Run automatically on diffs touching the paste flow, chat input, canvas defaults, or anything visible during a long brainstorming session.
 type: skill
 ---
 
-# Slate cognitive review
+# clawdSlate cognitive review
 
-Slate is a tool for **focused brainstorming sessions on dense
+clawdSlate is a tool for **focused brainstorming sessions on dense
 content** (papers, slide decks, code architectures, photos of
 whiteboards). That's the load case to optimise for. Most UI
 review checklists assume short transactional flows (sign up, add
@@ -141,7 +141,7 @@ diagrams that interconnect components to other components
 without ground-problem terminus read as overwhelming and
 unrooted, even when each individual fact is correct.
 
-This is encoded in Slate's `SYSTEM_SUFFIX` (`## 2.
+This is encoded in clawdSlate's `SYSTEM_SUFFIX` (`## 2.
 Ground-problem framing`); the cog reviewer's job is to confirm
 it survives all the way to the rendered canvas.
 

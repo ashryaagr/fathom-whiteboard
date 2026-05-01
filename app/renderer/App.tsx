@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { Whiteboard } from '../../src/Whiteboard.js';
 import type {
   WhiteboardHost,
@@ -12,6 +13,9 @@ type WbApi = {
     load: () => Promise<PaperPayload | null>;
     save: (p: PaperPayload) => Promise<void>;
     clear: () => Promise<void>;
+  };
+  session: {
+    archive: () => Promise<{ archivedAt: string | null }>;
   };
   asset: {
     save: (filename: string, bytes: ArrayBuffer) => Promise<{ absPath: string }>;
@@ -55,6 +59,97 @@ type PaperPayload =
   | { kind: 'text'; markdown: string; title?: string }
   | { kind: 'path'; absPath: string; title?: string };
 
+// ---------- error boundary ----------
+//
+// Catches renderer-side React errors that would otherwise leave the
+// window blank with the error only visible in DevTools. Shows the
+// message + stack inline so the user can read what went wrong without
+// opening DevTools.
+
+type ErrorBoundaryState = { error: Error | null };
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Surfacing to the renderer console as well so DevTools history
+    // captures the original throw site (React only reports the
+    // boundary catch otherwise).
+    // eslint-disable-next-line no-console
+    console.error('[clawdSlate ErrorBoundary]', error, info.componentStack);
+  }
+
+  reset = () => this.setState({ error: null });
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 32,
+            background: '#fff',
+            fontFamily:
+              "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+          }}
+        >
+          <div style={{ maxWidth: 720, width: '100%' }}>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 600,
+                color: '#c00',
+                marginBottom: 12,
+              }}
+            >
+              clawdSlate hit a renderer error
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: '#1d1d1f',
+                marginBottom: 16,
+                whiteSpace: 'pre-wrap',
+                background: 'rgba(220,0,0,0.05)',
+                border: '1px solid rgba(220,0,0,0.2)',
+                padding: 12,
+                borderRadius: 8,
+                fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+              }}
+            >
+              {this.state.error.message}
+              {this.state.error.stack ? `\n\n${this.state.error.stack}` : ''}
+            </div>
+            <button
+              onClick={this.reset}
+              style={{
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#fff',
+                background: '#0a84ff',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ---------- root ----------
 //
 // One surface: the Whiteboard. The right side panel is the only entry
@@ -89,6 +184,7 @@ export function App() {
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperLoaded, setPaperLoaded] = useState(false);
   const [resetCount, setResetCount] = useState(0);
+  const [showNewModal, setShowNewModal] = useState(false);
 
   // Stable mirror of `paper` so the host (built once) can read the
   // latest value without being reconstructed on every state change.
@@ -96,18 +192,38 @@ export function App() {
   // and cancel any in-flight generation.
   const paperRef = useRef<PaperPayload | null>(null);
 
+  // Guards saveScene() during a clear/remount cycle. Without it, the
+  // Whiteboard's unmount cleanup calls flushSaveScene(staleSceneRef)
+  // which writes the just-discarded scene right back to disk — losing
+  // the clear and re-loading the old whiteboard on remount.
+  const isClearingRef = useRef(false);
+
   useEffect(() => {
     paperRef.current = paper;
   }, [paper]);
 
   useEffect(() => {
-    void window.wb.paper.load().then((p) => {
+    (async () => {
+      const p = await window.wb.paper.load();
       if (p) {
         paperRef.current = p;
         setPaper(p);
+        setPaperLoaded(true);
+        return;
+      }
+      // No paper on disk. If a scene is also present, the previous
+      // session ended in a corrupted half-cleared state (paper.json
+      // emptied but whiteboard.excalidraw not). Make state consistent
+      // by clearing the orphan scene so the new session starts blank.
+      const orphanScene = await window.wb.scene.load();
+      if (orphanScene && orphanScene.elements.length > 0) {
+        console.log(
+          `[clawdSlate] startup recovery — found orphan scene (${orphanScene.elements.length} elements) with no paper; clearing`,
+        );
+        await window.wb.scene.save({ elements: [] });
       }
       setPaperLoaded(true);
-    });
+    })();
   }, []);
 
   const host = useMemo<WhiteboardHost>(
@@ -121,6 +237,14 @@ export function App() {
         };
       },
       saveScene: async (s) => {
+        // Skip writes during a clear cycle — the Whiteboard's unmount
+        // cleanup tries to flush its sceneRef and would otherwise undo
+        // the explicit empty-scene write done in clear() below.
+        if (isClearingRef.current) {
+          console.log(`[clawdSlate] saveScene SKIPPED (clearing) — would have written ${s.elements.length} elements`);
+          return;
+        }
+        console.log(`[clawdSlate] saveScene → ${s.elements.length} elements`);
         await window.wb.scene.save({ elements: s.elements });
       },
       loadViewport: () => window.wb.viewport.load(),
@@ -179,14 +303,17 @@ export function App() {
         }),
       refine: (scene, instruction, cb, abortController) =>
         new Promise((resolve, reject) => {
-          const activePaper = paperRef.current;
+          let activePaper = paperRef.current;
           if (!activePaper) {
-            // Refine without an established paper shouldn't be reachable
-            // (Whiteboard only enables refine after hasGenerated). If it
-            // happens, fall back to treating the instruction as initial
-            // content rather than failing silently.
-            reject(new Error('No paper established yet — use generate.'));
-            return;
+            // Refine reached without an established paper — usually a
+            // corrupted-disk-state recovery path. Synthesize from the
+            // instruction (same as generate's first-Send) and persist
+            // so subsequent refines stay grounded.
+            console.log('[clawdSlate] refine — no paper, synthesizing from instruction');
+            activePaper = synthesizePaper(instruction);
+            paperRef.current = activePaper;
+            setPaper(activePaper);
+            void window.wb.paper.save(activePaper);
           }
           void window.wb
             .refine(
@@ -224,13 +351,25 @@ export function App() {
             });
         }),
       clear: async () => {
-        await window.wb.paper.clear();
-        await window.wb.scene.save({ elements: [] });
-        paperRef.current = null;
-        setPaper(null);
-        // Bump the key to force-remount Whiteboard so its internal
-        // status/scene state resets.
-        setResetCount((n) => n + 1);
+        console.log('[clawdSlate] clear START — isClearingRef = true');
+        isClearingRef.current = true;
+        try {
+          await window.wb.paper.clear();
+          console.log('[clawdSlate] clear → paper.clear done');
+          await window.wb.scene.save({ elements: [] });
+          console.log('[clawdSlate] clear → wrote empty scene to disk');
+          paperRef.current = null;
+          setPaper(null);
+          setResetCount((n) => {
+            console.log(`[clawdSlate] clear → resetCount ${n} → ${n + 1}`);
+            return n + 1;
+          });
+        } finally {
+          setTimeout(() => {
+            console.log('[clawdSlate] clear → guard released');
+            isClearingRef.current = false;
+          }, 500);
+        }
       },
     }),
     [],
@@ -256,13 +395,161 @@ export function App() {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <TopBar
-        title={paper?.title ?? 'Slate'}
+        title={paper?.title ?? 'clawdSlate'}
         onNew={() => {
-          void host.clear?.();
+          // No paper yet → already a fresh canvas, nothing to confirm.
+          if (!paper) return;
+          setShowNewModal(true);
         }}
       />
       <div style={{ flex: 1, minHeight: 0 }}>
-        <Whiteboard host={host} key={resetCount} />
+        <ErrorBoundary>
+          <Whiteboard host={host} key={resetCount} />
+        </ErrorBoundary>
+      </div>
+      {showNewModal && (
+        <NewWhiteboardModal
+          onCancel={() => setShowNewModal(false)}
+          onSaveAndNew={async () => {
+            setShowNewModal(false);
+            await window.wb.session.archive();
+            await host.clear?.();
+          }}
+          onDiscardAndNew={async () => {
+            setShowNewModal(false);
+            await host.clear?.();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal shown when the user clicks "New" with an existing whiteboard
+// on the canvas. Two destructive paths so the user has to opt in:
+//   - Save & New: snapshot the current scene+paper into an archive
+//     dir under `sessions/archive-<ts>/`, then start fresh.
+//   - Discard & New: throw away the current whiteboard, start fresh.
+// Cancel returns to the existing canvas without changing anything.
+function NewWhiteboardModal({
+  onCancel,
+  onSaveAndNew,
+  onDiscardAndNew,
+}: {
+  onCancel: () => void;
+  onSaveAndNew: () => void;
+  onDiscardAndNew: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.32)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+        backdropFilter: 'blur(2px)',
+        WebkitBackdropFilter: 'blur(2px)',
+      }}
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-modal-title"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 440,
+          maxWidth: '90%',
+          padding: 22,
+          background: '#fff',
+          borderRadius: 14,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.22)',
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+        }}
+      >
+        <div
+          id="new-modal-title"
+          style={{
+            fontSize: 17,
+            fontWeight: 600,
+            color: '#1d1d1f',
+            marginBottom: 6,
+          }}
+        >
+          Start a new whiteboard?
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            color: '#3a3a3c',
+            lineHeight: 1.5,
+            marginBottom: 18,
+          }}
+        >
+          Your current whiteboard will be replaced with an empty canvas.
+          Save it first to keep an archived copy, or discard it.
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '7px 14px',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              color: '#1d1d1f',
+              background: 'rgba(0,0,0,0.04)',
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: 8,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onDiscardAndNew}
+            style={{
+              padding: '7px 14px',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              color: '#c00',
+              background: 'rgba(220,0,0,0.06)',
+              border: '1px solid rgba(220,0,0,0.22)',
+              borderRadius: 8,
+              cursor: 'pointer',
+            }}
+          >
+            Discard
+          </button>
+          <button
+            onClick={onSaveAndNew}
+            style={{
+              padding: '7px 14px',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              color: '#fff',
+              background: '#0a84ff',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+            }}
+          >
+            Save & start new
+          </button>
+        </div>
       </div>
     </div>
   );

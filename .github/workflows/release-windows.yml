@@ -41,7 +41,7 @@ jobs:
         run: |
           $tag = if ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
           Get-ChildItem release -File | Where-Object {
-            $_.Name -match '^(Slate-Setup-.*\.exe|Slate-.*-x64\.zip|Slate-.*\.exe)$'
+            $_.Name -match '^(clawdSlate-Setup-.*\.exe|clawdSlate-.*-x64\.zip|clawdSlate-.*\.exe)$'
           } | ForEach-Object {
             gh release upload $tag $_.FullName --clobber
           }

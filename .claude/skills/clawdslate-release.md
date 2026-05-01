@@ -1,12 +1,12 @@
 ---
-name: slate-release
-description: Build, sign, and publish a new Slate release; verify the install/update path works end-to-end before declaring done. Use when shipping a version bump.
+name: clawdslate-release
+description: Build, sign, and publish a new clawdSlate release; verify the install/update path works end-to-end before declaring done. Use when shipping a version bump.
 type: skill
 ---
 
-# Slate release pipeline
+# clawdSlate release pipeline
 
-Slate ships as a single `Slate.app` bundle, distributed via both DMG and
+clawdSlate ships as a single `clawdSlate.app` bundle, distributed via both DMG and
 a `curl | bash` install script. Both are generated from the same build.
 See [docs/DISTRIBUTION.md](../../docs/DISTRIBUTION.md) for the design.
 
@@ -20,7 +20,7 @@ See [docs/DISTRIBUTION.md](../../docs/DISTRIBUTION.md) for the design.
 ## Prerequisites on the dev machine
 
 - macOS Apple Silicon with Xcode CLI tools (for `codesign`, `ditto`).
-- `gh` CLI, authenticated against github.com/ashryaagr/slate.
+- `gh` CLI, authenticated against github.com/ashryaagr/clawdslate.
 - Node 22+, npm, dependencies installed.
 - A clean working tree (no untracked files in `release/`).
 
@@ -40,11 +40,11 @@ echo "Releasing v$VERSION"
 # 2. Build the mac artifacts — arm64 only for v0.1
 npm run dist:mac
 # Produces:
-#   release/Slate-arm64.dmg   — drag-to-Applications installer
-#   release/Slate-arm64.zip   — zipped .app (what install.sh consumes)
+#   release/clawdSlate-arm64.dmg   — drag-to-Applications installer
+#   release/clawdSlate-arm64.zip   — zipped .app (what install.sh consumes)
 
 # 3. Verify the ad-hoc signature before uploading
-codesign --verify --deep --strict "release/mac-arm64/Slate.app"
+codesign --verify --deep --strict "release/mac-arm64/clawdSlate.app"
 # Expect: no output + exit 0. Any error here means the build hook broke.
 
 # 4. Tag and push
@@ -56,13 +56,13 @@ git push origin "v$VERSION"
 
 # 5. Create the GitHub release with all artifacts
 gh release create "v$VERSION" \
-  release/Slate-arm64.dmg \
-  release/Slate-arm64.zip \
+  release/clawdSlate-arm64.dmg \
+  release/clawdSlate-arm64.zip \
   --title "v$VERSION" \
   --notes-file RELEASE_NOTES.md    # or --generate-notes
 
 # 6. (Optional) Publish the npm package if its surface changed
-#    Slate ships the same component as `fathom-whiteboard` on npm.
+#    clawdSlate ships the same component as `fathom-whiteboard` on npm.
 npm publish
 ```
 
@@ -73,38 +73,38 @@ code have failed in the real world. Every release **must** be
 verified with a real version-bump install before it's declared
 done.
 
-### Slate's update mechanism
+### clawdSlate's update mechanism
 
-Slate does NOT use Squirrel.Mac or electron-updater for the
+clawdSlate does NOT use Squirrel.Mac or electron-updater for the
 download/install path. The same `install.sh` script is the universal
 install AND update mechanism. To update, the user (or the in-app
-"slate update" command) re-runs the script. The script:
+"clawdslate update" command) re-runs the script. The script:
 
-1. Downloads `Slate-arm64.zip` from the latest GitHub Release.
-2. Replaces `/Applications/Slate.app` (or `~/Applications/Slate.app`).
+1. Downloads `clawdSlate-arm64.zip` from the latest GitHub Release.
+2. Replaces `/Applications/clawdSlate.app` (or `~/Applications/clawdSlate.app`).
 3. Clears the `com.apple.quarantine` xattr.
 4. Re-applies ad-hoc signing.
-5. Re-installs the `slate` launcher at `~/.local/bin/slate`.
+5. Re-installs the `clawdslate` launcher at `~/.local/bin/clawdslate`.
 
 This works identically regardless of whether the user installed via
-DMG or via curl. Both paths produce the same `Slate.app`; both are
+DMG or via curl. Both paths produce the same `clawdSlate.app`; both are
 updated by the same script.
 
 ### Special case: the release changes install.sh
 
 If this release modifies `install.sh` itself, the existing user's
-v(N-1) `slate update` command STILL fetches the new script (it
+v(N-1) `clawdslate update` command STILL fetches the new script (it
 hits `raw.githubusercontent.com/.../install.sh` at run-time, not
 a bundled copy). So `install.sh` changes ARE auto-applied — but
-only if the user actually runs `slate update`. There's no
-auto-check; Slate doesn't ship a daemon.
+only if the user actually runs `clawdslate update`. There's no
+auto-check; clawdSlate doesn't ship a daemon.
 
 If a release fixes a bug that prevented users from getting *to*
 the update mechanism (e.g. a crash on launch that prevented them
-from typing `slate update`), the release notes must call it out:
+from typing `clawdslate update`), the release notes must call it out:
 
 > "If you're stuck on v(N-1), run this one-liner once to catch up:
-> `curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh | bash`"
+> `curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh | bash`"
 
 ### Normal release test loop
 
@@ -114,27 +114,27 @@ from typing `slate update`), the release notes must call it out:
 
 # 1. Install v(N-1) fresh (or keep your existing install)
 #    If starting fresh:
-curl -fsSL https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh \
   | bash -s -- --version "v$PREV_VERSION"
 
 # 2. Launch it
-slate
+clawdslate
 # Verify: title bar / About menu shows vPREV_VERSION.
 
 # 3. Update via the launcher
-slate update
+clawdslate update
 # Expected: re-runs install.sh against latest, swaps the bundle,
-# relaunches Slate at vNEW.
+# relaunches clawdSlate at vNEW.
 
 # 4. Verify
-slate --version    # prints vNEW
-slate              # opens, paste-prompt visible
+clawdslate --version    # prints vNEW
+clawdslate              # opens, paste-prompt visible
 
 # 5. Verify the curl install works for first-time users too
 #    (clean machine simulation)
-sudo rm -rf /Applications/Slate.app   # only on a test machine!
+sudo rm -rf /Applications/clawdSlate.app   # only on a test machine!
 curl -fsSL …/install.sh | bash
-open -a Slate
+open -a clawdSlate
 # Expect: app launches immediately, no Gatekeeper warning.
 ```
 
@@ -144,7 +144,7 @@ means every user gets stuck on the previous version.
 
 ## Post-release: confirm install.sh is up to date
 
-The install script URL is `https://raw.githubusercontent.com/ashryaagr/slate/main/install.sh`.
+The install script URL is `https://raw.githubusercontent.com/ashryaagr/clawdslate/main/install.sh`.
 If `install.sh` itself changed as part of this release, make sure the
 commit landed on main before announcing — otherwise new users will pull
 a stale script.
@@ -164,7 +164,7 @@ gh release edit "v$PREV_VERSION" --latest
 ```
 
 A user who already updated to the broken version is stuck on it
-until the next release — but `slate update` will pull the
+until the next release — but `clawdslate update` will pull the
 re-promoted version once they run it. Encourage that in the
 rollback announcement.
 
@@ -175,8 +175,8 @@ rollback announcement.
 - [ ] `npm run dist:mac` completed without errors.
 - [ ] `codesign --verify --deep --strict` passed.
 - [ ] Release created on GitHub with both artifacts uploaded.
-- [ ] v(N-1) running copy updated to vN cleanly via `slate update`.
-- [ ] `slate --version` confirms vN after update.
+- [ ] v(N-1) running copy updated to vN cleanly via `clawdslate update`.
+- [ ] `clawdslate --version` confirms vN after update.
 - [ ] Fresh `curl | bash` install produces a launchable app with no
       Gatekeeper warning.
 - [ ] No error lines in DevTools console after a full round-trip

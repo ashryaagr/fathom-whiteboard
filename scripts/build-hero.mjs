@@ -21,7 +21,7 @@ const scale = 2;
 const width = 1600;
 const height = 220;
 
-// Soft cream background — matches Slate's docs theme. GitHub won't honor
+// Soft cream background — matches clawdSlate's docs theme. GitHub won't honor
 // prefers-color-scheme for inline README images, so the image must carry
 // its own background.
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
