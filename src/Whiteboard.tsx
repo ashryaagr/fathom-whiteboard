@@ -621,7 +621,7 @@ export function Whiteboard({ host }: Props) {
   let inputPlaceholder = 'Refine the whiteboard…';
   let buttonLabel = 'Send';
   if (status === 'awaiting-focus') {
-    inputPlaceholder = 'What should the whiteboard focus on? (optional — Enter for general overview)';
+    inputPlaceholder = 'Paste anything — text, a PDF, an image — or describe what to draw. Enter to send.';
     buttonLabel = 'Generate';
   } else if (busy) {
     inputPlaceholder = 'Type a follow-up — Send aborts current run';
@@ -714,9 +714,9 @@ export function Whiteboard({ host }: Props) {
           >
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>
-                No whiteboard yet
+                Paste anything. Get a whiteboard.
               </div>
-              <div>Type a focus on the right (optional) and click Generate.</div>
+              <div>Drop a PDF, paste an image, or describe what to draw — on the right.</div>
             </div>
           </div>
         )}
@@ -861,7 +861,7 @@ export function Whiteboard({ host }: Props) {
                   }}
                 >
                   {status === 'awaiting-focus'
-                    ? 'Tell the agent what to focus on, or leave blank for a general overview.'
+                    ? 'Paste a paper, drop a PDF, drag an image, or describe what to draw. Then Send.'
                     : status === 'idle' && hasGenerated
                     ? 'Ready. Ask a follow-up below.'
                     : status === 'loading'
