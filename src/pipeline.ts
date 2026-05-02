@@ -110,10 +110,16 @@ The component name is the primary visual element. The ground-problem
 question accompanies it in secondary, smaller text — close enough to
 read together, restrained enough not to crowd the name.
 
+When the link between a component and its question isn't self-evident,
+add a one-line intuition next to it — plain English, *why* this piece
+is the natural answer — kept tight enough to scan in the same glance.
+
 ## 3. Constraints to remove
 
 - You do not need to render math equations. Include one only if it
-  makes a component's role visibly clearer.
+  makes a component's role visibly clearer — and when you do, anchor
+  it to the components it acts on with visible flow arrows (data,
+  gradient, update), not the symbols standing alone.
 - You do not need to follow any particular layout. Let the paper's
   own structure decide.
 - You do not need to cover every section of the paper. Pick what is

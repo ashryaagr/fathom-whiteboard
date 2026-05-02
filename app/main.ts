@@ -18,6 +18,7 @@ import {
   type PaperRef,
   type WhiteboardScene,
 } from '../dist/index.js';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -674,9 +675,57 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// Discovery probe — fired once at app start so the settings popover can
+// render the user's claude.ai connectors (Hugging Face, Slack, Gmail, …)
+// before they kick off their first generation. Without this, the
+// `available-tools.json` cache stays empty until the first SDK init
+// event lands mid-generation, leaving the popover with only arxiv +
+// web search visible. Aborts as soon as the init event arrives so no
+// model API call happens.
+let discoveryRan = false;
+async function runDiscoveryProbe(): Promise<void> {
+  if (discoveryRan) return;
+  discoveryRan = true;
+  try {
+    const ctrl = new AbortController();
+    const stream = query({
+      prompt: 'noop',
+      options: {
+        systemPrompt: 'noop',
+        cwd: process.env.HOME ?? '/',
+        mcpServers: {},
+        allowedTools: [],
+        tools: [],
+        settingSources: [],
+        includePartialMessages: false,
+        model: 'claude-sonnet-4-6',
+        maxTurns: 1,
+        ...(resolveClaudeExecutablePath()
+          ? { pathToClaudeCodeExecutable: resolveClaudeExecutablePath() }
+          : {}),
+        abortController: ctrl,
+      } as never,
+    });
+    for await (const ev of stream) {
+      const e = ev as { type?: string; subtype?: string; tools?: string[] };
+      if (e.type === 'system' && e.subtype === 'init') {
+        const tools = Array.isArray(e.tools) ? e.tools : [];
+        if (tools.length) await persistAvailableTools(tools);
+        ctrl.abort();
+        break;
+      }
+    }
+  } catch {
+    /* best-effort — never block app startup */
+  }
+}
+
 app.whenReady().then(async () => {
   buildAppMenu();
   await createWindow(FIRST_SESSION_ID);
+  // Fire discovery in the background after window is up so it doesn't
+  // delay first paint.
+  void runDiscoveryProbe();
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
