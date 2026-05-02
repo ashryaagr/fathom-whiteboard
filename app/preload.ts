@@ -99,6 +99,12 @@ const wbApi = {
   // `[aborted]` instead of surfacing as a user-visible error.
   abort: (channel: string): Promise<void> =>
     ipcRenderer.invoke('generate:abort', channel),
+
+  // Renderer error reporter — main writes the entry to clawdSlate.log
+  // under userData. Fire-and-forget; never blocks the renderer.
+  reportError: (scope: string, message: string, stack: string): void => {
+    void ipcRenderer.invoke('renderer:report-error', { scope, message, stack });
+  },
 };
 
 contextBridge.exposeInMainWorld('wb', wbApi);

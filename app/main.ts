@@ -290,6 +290,33 @@ ipcMain.handle('viewport:save', async (e, vp: {
   zoom: number;
 }) => saveViewport(e, vp));
 
+// Renderer error log. Lives at <userData>/clawdSlate.log and is
+// append-only — every uncaught renderer error and promise rejection
+// shows up here with a timestamp + stack. No console / DevTools
+// required to diagnose later.
+function appendErrorLog(entry: { scope: string; message: string; stack: string }): void {
+  try {
+    const logPath = join(app.getPath('userData'), 'clawdSlate.log');
+    const ts = new Date().toISOString();
+    const line =
+      `[${ts}] [${entry.scope}] ${entry.message}\n` +
+      (entry.stack ? `${entry.stack}\n` : '') +
+      '---\n';
+    void writeFile(logPath, line, { encoding: 'utf-8', flag: 'a' });
+    // Also surface to terminal for dev runs.
+    console.error(`[clawdSlate.log] ${entry.scope}: ${entry.message}`);
+  } catch {
+    /* logging must never throw */
+  }
+}
+
+ipcMain.handle(
+  'renderer:report-error',
+  async (_e, entry: { scope: string; message: string; stack: string }) => {
+    appendErrorLog(entry);
+  },
+);
+
 const activeRuns = new Map<string, AbortController>();
 
 // arXiv MCP server config — shipped as a stdio MCP under

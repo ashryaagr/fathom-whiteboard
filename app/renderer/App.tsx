@@ -189,8 +189,11 @@ function synthesizePaper(composed: string): PaperPayload {
 
 type ToolSettings = { webSearch: boolean; arxiv: boolean };
 
-const SETTINGS_KEY = 'clawdSlate.toolSettings.v1';
-const DEFAULT_TOOL_SETTINGS: ToolSettings = { webSearch: true, arxiv: false };
+// Storage key bumped to v2 when the default for `arxiv` flipped from
+// false to true. New users start with both on; existing v1 users get
+// the new default once (their old key is left in place but unused).
+const SETTINGS_KEY = 'clawdSlate.toolSettings.v2';
+const DEFAULT_TOOL_SETTINGS: ToolSettings = { webSearch: true, arxiv: true };
 
 function loadToolSettings(): ToolSettings {
   try {
@@ -199,7 +202,7 @@ function loadToolSettings(): ToolSettings {
     const parsed = JSON.parse(raw) as Partial<ToolSettings>;
     return {
       webSearch: typeof parsed.webSearch === 'boolean' ? parsed.webSearch : true,
-      arxiv: typeof parsed.arxiv === 'boolean' ? parsed.arxiv : false,
+      arxiv: typeof parsed.arxiv === 'boolean' ? parsed.arxiv : true,
     };
   } catch {
     return { ...DEFAULT_TOOL_SETTINGS };

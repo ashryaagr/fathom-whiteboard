@@ -30,9 +30,13 @@ import type { WhiteboardScene, WhiteboardViewport } from './types.js';
 // container — multi-text content boxes (math notes, equation lists)
 // are intentional and a single label binding can't represent them.
 function autoBindOrphanText(
-  elements: readonly Record<string, unknown>[],
+  elements: readonly Record<string, unknown>[] | null | undefined,
 ): Record<string, unknown>[] {
   type El = Record<string, unknown>;
+  // Disk state from earlier versions / mid-stream IPC payloads can
+  // drop the elements field entirely. Treat anything that isn't a
+  // real array as "no elements"; downstream consumers handle [] fine.
+  if (!Array.isArray(elements)) return [];
   const list = elements as El[];
   const isContainer = (e: El): boolean =>
     e.type === 'rectangle' || e.type === 'ellipse' || e.type === 'diamond';
@@ -86,8 +90,12 @@ function autoBindOrphanText(
 }
 
 function fillSkeletonElements(
-  elements: WhiteboardScene['elements'],
+  elements: WhiteboardScene['elements'] | null | undefined,
 ): WhiteboardScene['elements'] {
+  // Same guard as autoBindOrphanText — elements may be missing on
+  // first launch with corrupted state, on partial-stream payloads,
+  // or in tests where a host stub returns a non-array.
+  if (!Array.isArray(elements)) return [] as WhiteboardScene['elements'];
   if (elements.length === 0) return elements;
   const promoted = autoBindOrphanText(
     elements as unknown as Record<string, unknown>[],
@@ -756,17 +764,27 @@ export function Whiteboard({ host }: Props) {
           ? host.loadViewport().catch(() => null)
           : Promise.resolve(null);
         const persisted = await host.loadScene();
-        console.log(`[Whiteboard] loadScene returned: ${persisted ? `${persisted.scene.elements.length} elements` : 'null'}`);
+        // Some hosts / older disk states return scene without an
+        // elements array. Normalise so the rest of this effect (and
+        // the user-visible log line) sees a real array.
+        const persistedElements = Array.isArray(persisted?.scene?.elements)
+          ? persisted.scene.elements
+          : [];
+        console.log(
+          `[Whiteboard] loadScene returned: ${
+            persisted ? `${persistedElements.length} elements` : 'null'
+          }`,
+        );
         if (cancelled) return;
         const persistedViewport = await viewportPromise;
         if (cancelled) return;
 
-        if (persisted && persisted.scene.elements.length > 0) {
+        if (persisted && persistedElements.length > 0) {
           // Defensive convert: scenes saved before the
           // fillSkeletonElements fix may still be in skeleton form on
           // disk. Idempotent on already-converted scenes.
           const filled: WhiteboardScene = {
-            elements: fillSkeletonElements(persisted.scene.elements),
+            elements: fillSkeletonElements(persistedElements),
           };
           sceneRef.current = filled;
           setHasGenerated(true);

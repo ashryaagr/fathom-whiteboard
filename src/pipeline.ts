@@ -314,19 +314,44 @@ async function runAgent(opts: {
     cb,
   } = opts;
 
-  // WebSearch lets the agent look up external context the paper
-  // references (a cited prior work, a technical term it doesn't
-  // define). Read is added when the paper itself is a file path the
-  // agent has to open. Everything else (Bash, Grep, Glob, ToolSearch,
-  // the rest of the claude_code preset) stays disabled so the
-  // single-purpose JSON-emission task isn't taxed by tool
-  // descriptions it never uses.
+  // The agent's primary job is to emit Excalidraw scenes via
+  // create_view. We keep that as a hard requirement and let Claude
+  // reach for whatever else it deems useful — Read, WebSearch, Bash,
+  // Grep, Glob, etc. — without us pre-restricting the allowlist.
+  //
+  // Two explicit user-controlled toggles narrow that surface:
+  //   webSearch=false → drops WebSearch from the allowed list
+  //   arxivMcp        → opt-in arxiv MCP + its three tools
+  //
+  // Everything else from the claude_code preset is allowed by
+  // default; the user said directly "claude can have other tools as
+  // well by default, other than what we explicitly pass".
   const allowedTools = [
     ...EXCALIDRAW_TOOLS,
     ...(arxivMcp ? ARXIV_TOOLS : []),
     ...(webSearch ? ['WebSearch'] : []),
-    ...(paperReadPath ? ['Read'] : []),
+    'Read',
+    'Glob',
+    'Grep',
+    'Bash',
+    'ToolSearch',
+  ].filter(Boolean);
+  // Mirror the same set into the SDK's builtin-tool flag so the
+  // preset actually loads them. Keep paperReadPath gating only on
+  // whether to advertise Read in messaging — the underlying tool is
+  // available either way.
+  const builtinTools = [
+    ...(webSearch ? ['WebSearch'] : []),
+    'Read',
+    'Glob',
+    'Grep',
+    'Bash',
+    'ToolSearch',
   ];
+  // paperReadPath is now redundant for tool access (Read is always
+  // on); kept as a marker so future logic that conditionalises on
+  // "is the paper on disk?" still has a signal.
+  void paperReadPath;
 
   const mcpServers: Record<string, unknown> = {
     excalidraw: { type: 'http', url: mcpUrl },
@@ -351,16 +376,11 @@ async function runAgent(opts: {
       cwd: safeAgentCwd(),
       mcpServers,
       allowedTools,
-      // Builtin-tool allowlist. The claude_code preset auto-loads ~40
-      // tools (Bash, Glob, Grep, ToolSearch, …) which we don't need
-      // for a single-purpose diagram-emission task; each one taxes
-      // input-token budget per turn. We keep WebSearch (so the agent
-      // can look up a cited reference or a technical term) and Read
-      // (only when the paper is on disk). Both honour their toggles.
-      tools: [
-        ...(webSearch ? ['WebSearch'] : []),
-        ...(paperReadPath ? ['Read'] : []),
-      ],
+      // Builtin-tool list — kept aligned with allowedTools so the
+      // SDK actually loads what we advertise. Adding more here
+      // expands what Claude can call; allowedTools above is the gate
+      // that says "even if the SDK loaded it, we accept calls to it".
+      tools: builtinTools,
       // Disable host-side setting sources (CLAUDE.md, project config,
       // user config) so the pipeline runs with exactly the prompt we
       // authored, nothing else.
