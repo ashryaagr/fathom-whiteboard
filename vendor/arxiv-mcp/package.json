@@ -1,0 +1,10 @@
+{
+  "name": "fathom-arxiv-mcp",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "description": "Minimal stdio MCP server for arXiv search + download. No third-party deps; talks the arXiv API directly. Used by clawdSlate + Fathom so the agent can pull a referenced paper and read it locally.",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

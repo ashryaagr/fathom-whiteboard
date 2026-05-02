@@ -44,6 +44,9 @@ module.exports = {
     // restrict to what's actually needed.
     'vendor/excalidraw-mcp/dist/**',
     'vendor/excalidraw-mcp/package.json',
+    // Vendored arxiv MCP — single .mjs script with no third-party deps.
+    'vendor/arxiv-mcp/server.mjs',
+    'vendor/arxiv-mcp/package.json',
     // Top-level package.json for electron-builder + Electron's main lookup.
     'package.json',
     // Standard noise exclusions.
@@ -68,6 +71,10 @@ module.exports = {
     // filesystem and sees app.asar as a FILE → ENOTDIR. Unpack so
     // the spawned process gets a real path.
     'vendor/excalidraw-mcp/**',
+    // arxiv-mcp is a single .mjs spawned the same way (process.execPath
+    // + ELECTRON_RUN_AS_NODE=1 + script path); same ENOTDIR risk if it
+    // sits inside app.asar.
+    'vendor/arxiv-mcp/**',
     // The Claude Agent SDK spawns a bundled `claude` binary. Same asar
     // restriction. clawdSlate threads `pathToClaudeCodeExecutable` through
     // `runAgent` opts; in this packaged app the SDK's default

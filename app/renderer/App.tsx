@@ -180,17 +180,59 @@ function synthesizePaper(composed: string): PaperPayload {
   };
 }
 
+// ---------- settings (tool toggles) ----------
+//
+// Two toggles, persisted to localStorage so they survive reloads. Web
+// search defaults on (historical behaviour); arxiv defaults off so a
+// user who never opens settings doesn't pay the spawn cost or have an
+// extra MCP described to the agent on every call.
+
+type ToolSettings = { webSearch: boolean; arxiv: boolean };
+
+const SETTINGS_KEY = 'clawdSlate.toolSettings.v1';
+const DEFAULT_TOOL_SETTINGS: ToolSettings = { webSearch: true, arxiv: false };
+
+function loadToolSettings(): ToolSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_TOOL_SETTINGS };
+    const parsed = JSON.parse(raw) as Partial<ToolSettings>;
+    return {
+      webSearch: typeof parsed.webSearch === 'boolean' ? parsed.webSearch : true,
+      arxiv: typeof parsed.arxiv === 'boolean' ? parsed.arxiv : false,
+    };
+  } catch {
+    return { ...DEFAULT_TOOL_SETTINGS };
+  }
+}
+
+function saveToolSettings(s: ToolSettings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    /* localStorage full / disabled — ignore */
+  }
+}
+
 export function App() {
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperLoaded, setPaperLoaded] = useState(false);
   const [resetCount, setResetCount] = useState(0);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [toolSettings, setToolSettings] = useState<ToolSettings>(() =>
+    loadToolSettings(),
+  );
 
   // Stable mirror of `paper` so the host (built once) can read the
   // latest value without being reconstructed on every state change.
   // Reconstructing the host would re-run Whiteboard's loadScene effect
   // and cancel any in-flight generation.
   const paperRef = useRef<PaperPayload | null>(null);
+  // Same mirror trick for tool settings — host closes over them once,
+  // but we want toggle changes to apply on the next Send without
+  // rebuilding the host (which would cancel in-flight runs).
+  const toolSettingsRef = useRef<ToolSettings>(toolSettings);
 
   // Guards saveScene() during a clear/remount cycle. Without it, the
   // Whiteboard's unmount cleanup calls flushSaveScene(staleSceneRef)
@@ -201,6 +243,11 @@ export function App() {
   useEffect(() => {
     paperRef.current = paper;
   }, [paper]);
+
+  useEffect(() => {
+    toolSettingsRef.current = toolSettings;
+    saveToolSettings(toolSettings);
+  }, [toolSettings]);
 
   useEffect(() => {
     (async () => {
@@ -268,7 +315,7 @@ export function App() {
 
           void window.wb
             .generate(
-              { paper: activePaper, focus: activeFocus },
+              { paper: activePaper, focus: activeFocus, tools: toolSettingsRef.current },
               {
                 onLog: cb.onLog,
                 onScene: (elements) =>
@@ -317,7 +364,12 @@ export function App() {
           }
           void window.wb
             .refine(
-              { paper: activePaper, scene: { elements: scene.elements }, instruction },
+              {
+                paper: activePaper,
+                scene: { elements: scene.elements },
+                instruction,
+                tools: toolSettingsRef.current,
+              },
               {
                 onLog: cb.onLog,
                 onScene: (elements) =>
@@ -401,7 +453,15 @@ export function App() {
           if (!paper) return;
           setShowNewModal(true);
         }}
+        onSettings={() => setShowSettings((s) => !s)}
       />
+      {showSettings && (
+        <SettingsPopover
+          settings={toolSettings}
+          onChange={setToolSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ErrorBoundary>
           <Whiteboard host={host} key={resetCount} />
@@ -555,7 +615,15 @@ function NewWhiteboardModal({
   );
 }
 
-function TopBar({ title, onNew }: { title: string; onNew: () => void }) {
+function TopBar({
+  title,
+  onNew,
+  onSettings,
+}: {
+  title: string;
+  onNew: () => void;
+  onSettings: () => void;
+}) {
   return (
     <div
       style={{
@@ -585,23 +653,179 @@ function TopBar({ title, onNew }: { title: string; onNew: () => void }) {
       >
         {title}
       </div>
-      <button
-        onClick={onNew}
+      <div
         style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
           WebkitAppRegion: 'no-drag' as never,
-          padding: '5px 12px',
-          fontSize: 12,
-          fontWeight: 500,
-          fontFamily: 'inherit',
-          color: '#0a84ff',
-          background: 'transparent',
-          border: '1px solid rgba(10,132,255,0.3)',
-          borderRadius: 7,
-          cursor: 'pointer',
         }}
       >
-        New
-      </button>
+        <button
+          onClick={onSettings}
+          title="Settings"
+          aria-label="Settings"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            padding: 0,
+            color: '#86868b',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: 7,
+            cursor: 'pointer',
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+        <button
+          onClick={onNew}
+          style={{
+            padding: '5px 12px',
+            fontSize: 12,
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            color: '#0a84ff',
+            background: 'transparent',
+            border: '1px solid rgba(10,132,255,0.3)',
+            borderRadius: 7,
+            cursor: 'pointer',
+          }}
+        >
+          New
+        </button>
+      </div>
     </div>
+  );
+}
+
+// Lightweight popover anchored under the gear icon. Click-outside or
+// Esc closes. Two toggles only — keep this surface minimal per the
+// product's "simple, minimal options" rule.
+function SettingsPopover({
+  settings,
+  onChange,
+  onClose,
+}: {
+  settings: ToolSettings;
+  onChange: (s: ToolSettings) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 90,
+        }}
+        aria-hidden
+      />
+      <div
+        role="dialog"
+        aria-label="Settings"
+        style={{
+          position: 'absolute',
+          top: 48,
+          right: 14,
+          width: 280,
+          padding: 14,
+          background: '#fff',
+          borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+          border: '1px solid rgba(0,0,0,0.06)',
+          zIndex: 91,
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#86868b',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+            marginBottom: 8,
+          }}
+        >
+          Tools the agent can use
+        </div>
+        <ToggleRow
+          label="Web search"
+          hint="Look up cited prior work or unfamiliar terms online."
+          checked={settings.webSearch}
+          onChange={(v) => onChange({ ...settings, webSearch: v })}
+        />
+        <ToggleRow
+          label="arXiv"
+          hint="Fetch papers from arxiv.org by id or query."
+          checked={settings.arxiv}
+          onChange={(v) => onChange({ ...settings, arxiv: v })}
+        />
+      </div>
+    </>
+  );
+}
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '8px 0',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#1d1d1f' }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 11, color: '#86868b', marginTop: 2 }}>{hint}</div>
+      </div>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ marginTop: 3, cursor: 'pointer' }}
+      />
+    </label>
   );
 }

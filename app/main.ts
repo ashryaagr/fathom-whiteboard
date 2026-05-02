@@ -292,14 +292,76 @@ ipcMain.handle('viewport:save', async (e, vp: {
 
 const activeRuns = new Map<string, AbortController>();
 
+// arXiv MCP server config — shipped as a stdio MCP under
+// vendor/arxiv-mcp/server.mjs (no Python dep). Per-window storage
+// path lands under the calling session's working directory so
+// downloaded papers travel with the session and don't pollute the
+// user's home dir.
+function resolveArxivMcp(
+  event: IpcMainInvokeEvent,
+): { command: string; args: string[]; env: Record<string, string> } | undefined {
+  const candidates = app.isPackaged
+    ? [
+        join(
+          process.resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'fathom-whiteboard',
+          'vendor',
+          'arxiv-mcp',
+          'server.mjs',
+        ),
+        join(
+          process.resourcesPath,
+          'app.asar.unpacked',
+          'vendor',
+          'arxiv-mcp',
+          'server.mjs',
+        ),
+      ]
+    : [
+        join(app.getAppPath(), 'vendor', 'arxiv-mcp', 'server.mjs'),
+        join(
+          app.getAppPath(),
+          'node_modules',
+          'fathom-whiteboard',
+          'vendor',
+          'arxiv-mcp',
+          'server.mjs',
+        ),
+      ];
+  const serverPath = candidates.find((p) => existsSync(p));
+  if (!serverPath) return undefined;
+  const storagePath = join(workDir(event), 'arxiv');
+  // Best-effort mkdir; the server will also recover by creating it.
+  void mkdir(storagePath, { recursive: true }).catch(() => {});
+  return {
+    command: process.execPath,
+    args: [serverPath],
+    env: {
+      ARXIV_STORAGE_PATH: storagePath,
+      // Tell Electron's spawned Node not to launch a renderer.
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  };
+}
+
+// Tool-toggle payload from the renderer's settings popover. Defaults
+// (web on, arxiv off) match the historical behaviour for users who
+// never open settings.
+type ToolSettings = { webSearch?: boolean; arxiv?: boolean };
+
 async function runStreamingGenerate(
   event: IpcMainInvokeEvent,
   channel: string,
   paper: PaperRef,
   focus: string | undefined,
   abortController: AbortController,
+  tools: ToolSettings,
 ) {
   const sender = event.sender;
+  const webSearch = tools.webSearch !== false;
+  const arxivMcp = tools.arxiv ? resolveArxivMcp(event) : undefined;
   try {
     const { scene, usd, turns } = await generateWhiteboard(
       paper,
@@ -319,6 +381,8 @@ async function runStreamingGenerate(
       focus,
       resolveClaudeExecutablePath(),
       abortController,
+      arxivMcp,
+      webSearch,
     );
     if (!sender.isDestroyed())
       sender.send(channel, {
@@ -341,7 +405,7 @@ ipcMain.handle(
   'generate:start',
   async (
     event,
-    req: { paper: PaperPayload; focus?: string },
+    req: { paper: PaperPayload; focus?: string; tools?: ToolSettings },
   ): Promise<{ channel: string }> => {
     await savePaper(event, req.paper);
     const channel = `generate:event:${randomBytes(4).toString('hex')}`;
@@ -353,6 +417,7 @@ ipcMain.handle(
       buildPaperRef(req.paper),
       req.focus,
       ctrl,
+      req.tools ?? {},
     ).finally(() => activeRuns.delete(channel));
     return { channel };
   },
@@ -362,12 +427,20 @@ ipcMain.handle(
   'refine:start',
   async (
     event,
-    req: { paper: PaperPayload; scene: WhiteboardScene; instruction: string },
+    req: {
+      paper: PaperPayload;
+      scene: WhiteboardScene;
+      instruction: string;
+      tools?: ToolSettings;
+    },
   ): Promise<{ channel: string }> => {
     const channel = `refine:event:${randomBytes(4).toString('hex')}`;
     const ctrl = new AbortController();
     activeRuns.set(channel, ctrl);
     const paperRef = buildPaperRef(req.paper);
+    const tools = req.tools ?? {};
+    const webSearch = tools.webSearch !== false;
+    const arxivMcp = tools.arxiv ? resolveArxivMcp(event) : undefined;
     void (async () => {
       const sender = event.sender;
       try {
@@ -391,6 +464,8 @@ ipcMain.handle(
           undefined,
           resolveClaudeExecutablePath(),
           ctrl,
+          arxivMcp,
+          webSearch,
         );
         if (!sender.isDestroyed())
           sender.send(channel, { type: 'done', elements: scene.elements });

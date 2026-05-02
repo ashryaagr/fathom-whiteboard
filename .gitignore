@@ -12,8 +12,9 @@ coverage/
 # Pre-pivot code, kept locally for reference; not committed.
 old/
 
-# Vendored upstream MCP server (only needed if running locally instead of hosted endpoint).
-vendor/
+# Vendored upstream MCP server, cloned + built at postinstall — only ignore that one.
+# (vendor/arxiv-mcp/ is hand-authored source, not generated; keep it tracked.)
+vendor/excalidraw-mcp/
 
 # electron-builder output (Mac app bundles, blockmaps, etc.). The lib's
 # `dist/` lives at the repo root; we keep them separate.

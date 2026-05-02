@@ -1,6 +1,6 @@
 {
   "name": "fathom-whiteboard",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Generate explanatory whiteboards from research papers using Claude + excalidraw-mcp + the coleam00 diagram SKILL.",
   "license": "MIT",
   "author": "Ashrya <ashryaagr@gmail.com>",
@@ -27,6 +27,8 @@
     "src/SKILL.md",
     "vendor/excalidraw-mcp/dist/**",
     "vendor/excalidraw-mcp/package.json",
+    "vendor/arxiv-mcp/server.mjs",
+    "vendor/arxiv-mcp/package.json",
     "README.md",
     "LICENSE"
   ],

@@ -38,6 +38,17 @@ function safeAgentCwd(): string {
 // not in our allowedTools list — the agent never sees it.
 const EXCALIDRAW_TOOLS = ['mcp__excalidraw__create_view'];
 
+// arXiv MCP — gives the agent the ability to pull a cited paper from
+// arxiv.org and read it locally during a generation. Useful when the
+// user pastes a snippet that references a prior work the agent doesn't
+// already know, or when a refine instruction asks "compare this to
+// paper X."
+const ARXIV_TOOLS = [
+  'mcp__arxiv__search_papers',
+  'mcp__arxiv__download_paper',
+  'mcp__arxiv__list_downloaded_papers',
+];
+
 // System prompt = SKILL principles + Excalidraw element-format
 // reference (formerly returned by `read_me`) + Fathom-specific
 // suffix. By inlining the cheat sheet we save one full tool
@@ -119,8 +130,29 @@ read together, restrained enough not to crowd the name.
 // full prefix.
 const CACHED_SYSTEM_PROMPT = `${COLEAM_SKILL}\n\n────────────────────────────\n\n${EXCALIDRAW_CHEAT_SHEET}${SYSTEM_SUFFIX}`;
 
-function buildSystemPrompt(): string {
-  return CACHED_SYSTEM_PROMPT;
+// Appended only when arxiv tools are enabled. Goes AFTER the cached
+// prefix so prompt-caching still hits on the long stable head — only
+// the small arxiv tail re-encodes when the toggle is on.
+const ARXIV_APPENDIX = `
+
+## 4. Optional: arxiv access
+
+You can pull cited prior work from arxiv when it would meaningfully
+sharpen the diagram. Three tools are available:
+
+- \`mcp__arxiv__search_papers\` — search arxiv by query
+- \`mcp__arxiv__download_paper\` — fetch a paper's text by arxiv id
+- \`mcp__arxiv__list_downloaded_papers\` — list what's already local
+
+Use sparingly. The user's paper is the primary source. Reach for
+arxiv only when the paper directly cites a prior work whose mechanism
+you need to name correctly on the canvas, and you can't infer it from
+context.`;
+
+function buildSystemPrompt(opts: { arxivEnabled: boolean }): string {
+  return opts.arxivEnabled
+    ? CACHED_SYSTEM_PROMPT + ARXIV_APPENDIX
+    : CACHED_SYSTEM_PROMPT;
 }
 
 // Cache-friendly ordering: stable paper text comes FIRST, variable
@@ -246,6 +278,13 @@ async function runAgent(opts: {
   userMessage: string;
   mcpUrl: string;
   paperReadPath?: string; // when paper.kind === 'path', allow Read tool on it
+  // WebSearch availability — when false, the agent can only ground in
+  // the paper text itself. Defaults true (the historical behaviour).
+  webSearch?: boolean;
+  // arXiv MCP server config — pass `command` + `args` to spawn a stdio
+  // MCP that exposes search_papers / download_paper / list_downloaded_papers.
+  // When undefined, the agent simply doesn't have arxiv access.
+  arxivMcp?: { command: string; args: string[]; env?: Record<string, string> };
   // When the SDK runs inside an Electron app.asar bundle, its default
   // resolution of the bundled `claude` binary path (via import.meta.url)
   // points at `app.asar/.../claude`. asar's hook lets Electron Read that
@@ -268,6 +307,8 @@ async function runAgent(opts: {
     userMessage,
     mcpUrl,
     paperReadPath,
+    webSearch = true,
+    arxivMcp,
     pathToClaudeCodeExecutable,
     abortController,
     cb,
@@ -282,9 +323,22 @@ async function runAgent(opts: {
   // descriptions it never uses.
   const allowedTools = [
     ...EXCALIDRAW_TOOLS,
-    'WebSearch',
+    ...(arxivMcp ? ARXIV_TOOLS : []),
+    ...(webSearch ? ['WebSearch'] : []),
     ...(paperReadPath ? ['Read'] : []),
   ];
+
+  const mcpServers: Record<string, unknown> = {
+    excalidraw: { type: 'http', url: mcpUrl },
+  };
+  if (arxivMcp) {
+    mcpServers.arxiv = {
+      type: 'stdio',
+      command: arxivMcp.command,
+      args: arxivMcp.args,
+      ...(arxivMcp.env ? { env: arxivMcp.env } : {}),
+    };
+  }
 
   const stream = query({
     prompt: userMessage,
@@ -295,17 +349,18 @@ async function runAgent(opts: {
       // diagram-generation agent. Pure SKILL + Fathom suffix only.
       systemPrompt,
       cwd: safeAgentCwd(),
-      mcpServers: {
-        excalidraw: { type: 'http', url: mcpUrl },
-      },
+      mcpServers,
       allowedTools,
       // Builtin-tool allowlist. The claude_code preset auto-loads ~40
       // tools (Bash, Glob, Grep, ToolSearch, …) which we don't need
       // for a single-purpose diagram-emission task; each one taxes
       // input-token budget per turn. We keep WebSearch (so the agent
       // can look up a cited reference or a technical term) and Read
-      // (only when the paper is on disk).
-      tools: ['WebSearch', ...(paperReadPath ? ['Read'] : [])],
+      // (only when the paper is on disk). Both honour their toggles.
+      tools: [
+        ...(webSearch ? ['WebSearch'] : []),
+        ...(paperReadPath ? ['Read'] : []),
+      ],
       // Disable host-side setting sources (CLAUDE.md, project config,
       // user config) so the pipeline runs with exactly the prompt we
       // authored, nothing else.
@@ -549,15 +604,19 @@ export async function generateWhiteboard(
   focus?: string,
   pathToClaudeCodeExecutable?: string,
   abortController?: AbortController,
+  arxivMcp?: { command: string; args: string[]; env?: Record<string, string> },
+  webSearch: boolean = true,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
   try {
     const result = await runAgent({
-      systemPrompt: buildSystemPrompt(),
+      systemPrompt: buildSystemPrompt({ arxivEnabled: !!arxivMcp }),
       userMessage: buildUserMessage(paper, undefined, focus),
       mcpUrl: handle.url,
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
+      webSearch,
+      arxivMcp,
       pathToClaudeCodeExecutable,
       abortController,
       cb,
@@ -582,6 +641,8 @@ export async function refineWhiteboard(
   mcpOverride?: McpOverride,
   pathToClaudeCodeExecutable?: string,
   abortController?: AbortController,
+  arxivMcp?: { command: string; args: string[]; env?: Record<string, string> },
+  webSearch: boolean = true,
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
@@ -594,10 +655,12 @@ export async function refineWhiteboard(
       `## User instruction\n\n${userInstruction}\n\n` +
       `Apply the instruction. Call \`mcp__excalidraw__create_view\` with the updated elements JSON.`;
     const result = await runAgent({
-      systemPrompt: buildSystemPrompt(),
+      systemPrompt: buildSystemPrompt({ arxivEnabled: !!arxivMcp }),
       userMessage,
       mcpUrl: handle.url,
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
+      webSearch,
+      arxivMcp,
       pathToClaudeCodeExecutable,
       abortController,
       cb,

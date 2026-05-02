@@ -6,6 +6,10 @@ type PaperPayload =
 
 type Viewport = { scrollX: number; scrollY: number; zoom: number };
 
+// Tool toggles surfaced by the renderer's settings popover. Both
+// optional; main applies sane defaults (webSearch on, arxiv off).
+type ToolSettings = { webSearch?: boolean; arxiv?: boolean };
+
 const wbApi = {
   paper: {
     load: (): Promise<PaperPayload | null> => ipcRenderer.invoke('paper:load'),
@@ -30,7 +34,7 @@ const wbApi = {
     save: (vp: Viewport): Promise<void> => ipcRenderer.invoke('viewport:save', vp),
   },
   generate: (
-    req: { paper: PaperPayload; focus?: string },
+    req: { paper: PaperPayload; focus?: string; tools?: ToolSettings },
     cb: {
       onLog?: (text: string) => void;
       onScene?: (elements: unknown[]) => void;
@@ -58,7 +62,12 @@ const wbApi = {
       return { channel };
     })(),
   refine: (
-    req: { paper: PaperPayload; scene: { elements: unknown[] }; instruction: string },
+    req: {
+      paper: PaperPayload;
+      scene: { elements: unknown[] };
+      instruction: string;
+      tools?: ToolSettings;
+    },
     cb: {
       onLog?: (text: string) => void;
       onScene?: (elements: unknown[]) => void;
