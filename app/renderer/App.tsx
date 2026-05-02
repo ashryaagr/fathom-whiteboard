@@ -76,11 +76,25 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Surfacing to the renderer console as well so DevTools history
-    // captures the original throw site (React only reports the
-    // boundary catch otherwise).
+    // Console first — DevTools history catches the original throw
+    // site (React only reports the boundary catch otherwise).
     // eslint-disable-next-line no-console
     console.error('[clawdSlate ErrorBoundary]', error, info.componentStack);
+    // ALSO report to main so the entry lands in clawdSlate.log even
+    // when the user has no DevTools open. Includes React's component
+    // stack so we can see *which* component threw, not just the
+    // message.
+    try {
+      const w = window as unknown as {
+        wb?: { reportError?: (s: string, m: string, st: string) => void };
+      };
+      const stack =
+        (error.stack ?? '') +
+        (info.componentStack ? `\n\nComponent stack:${info.componentStack}` : '');
+      w.wb?.reportError?.('ErrorBoundary', error.message, stack);
+    } catch {
+      /* never let the error reporter throw */
+    }
   }
 
   reset = () => this.setState({ error: null });
@@ -126,6 +140,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
             >
               {this.state.error.message}
               {this.state.error.stack ? `\n\n${this.state.error.stack}` : ''}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: '#86868b',
+                marginBottom: 16,
+                fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+              }}
+            >
+              Full log appended to ~/Library/Application Support/fathom-whiteboard/clawdSlate.log
             </div>
             <button
               onClick={this.reset}

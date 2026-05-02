@@ -89,21 +89,68 @@ function autoBindOrphanText(
     .filter((e): e is El => e !== null);
 }
 
+// Excalidraw's runtime expects every element to have these array
+// fields populated as actual arrays — never null, never undefined.
+// Saved scenes from earlier releases (and from Excalidraw's own
+// serializer) regularly write `boundElements: null` and `groupIds:
+// undefined`, which is fine for round-trip but explodes when an
+// Excalidraw internal does `el.boundElements.forEach(...)` without
+// an array check. Normalise here so the canvas never sees a null.
+function sanitizeElement(e: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...e };
+  if (!Array.isArray(out.boundElements)) out.boundElements = [];
+  if (!Array.isArray(out.groupIds)) out.groupIds = [];
+  // Arrows store endpoint bindings here; same array invariant.
+  if (out.type === 'arrow' || out.type === 'line') {
+    if (out.points !== undefined && !Array.isArray(out.points)) {
+      out.points = [];
+    }
+  }
+  return out;
+}
+
+function sanitizeElements(
+  elements: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return elements.map(sanitizeElement);
+}
+
 function fillSkeletonElements(
   elements: WhiteboardScene['elements'] | null | undefined,
 ): WhiteboardScene['elements'] {
   // Same guard as autoBindOrphanText — elements may be missing on
   // first launch with corrupted state, on partial-stream payloads,
   // or in tests where a host stub returns a non-array.
-  if (!Array.isArray(elements)) return [] as WhiteboardScene['elements'];
+  if (!Array.isArray(elements)) {
+    console.warn(
+      '[Whiteboard] fillSkeletonElements got non-array',
+      typeof elements,
+      elements,
+    );
+    return [] as WhiteboardScene['elements'];
+  }
   if (elements.length === 0) return elements;
-  const promoted = autoBindOrphanText(
+  const sanitized = sanitizeElements(
     elements as unknown as Record<string, unknown>[],
   );
-  return convertToExcalidrawElements(
-    promoted as never,
-    { regenerateIds: false },
-  ) as WhiteboardScene['elements'];
+  const promoted = autoBindOrphanText(sanitized);
+  try {
+    return convertToExcalidrawElements(
+      promoted as never,
+      { regenerateIds: false },
+    ) as WhiteboardScene['elements'];
+  } catch (err) {
+    console.error(
+      '[Whiteboard] convertToExcalidrawElements threw — falling back to sanitized skeletons',
+      err,
+    );
+    // Fallback: hand the sanitized elements straight back. They lack
+    // the runtime defaults that convertToExcalidrawElements would
+    // have filled in, but Excalidraw will fill missing scalars
+    // (versionNonce, etc.) on its own. Better an unstyled diagram
+    // than a crashed renderer.
+    return sanitized as unknown as WhiteboardScene['elements'];
+  }
 }
 
 // Host interface — the parent app (Fathom) implements these and hands them in.
@@ -783,14 +830,30 @@ export function Whiteboard({ host }: Props) {
           // Defensive convert: scenes saved before the
           // fillSkeletonElements fix may still be in skeleton form on
           // disk. Idempotent on already-converted scenes.
-          const filled: WhiteboardScene = {
-            elements: fillSkeletonElements(persistedElements),
-          };
+          let filled: WhiteboardScene;
+          try {
+            filled = {
+              elements: fillSkeletonElements(persistedElements),
+            };
+          } catch (err) {
+            console.error(
+              '[Whiteboard] fillSkeletonElements crashed during loadScene; starting blank',
+              err,
+            );
+            filled = { elements: [] };
+          }
           sceneRef.current = filled;
           setHasGenerated(true);
           canSaveRef.current = true;
           if (apiRef.current) {
-            apiRef.current.updateScene({ elements: filled.elements });
+            try {
+              apiRef.current.updateScene({ elements: filled.elements });
+            } catch (err) {
+              console.error(
+                '[Whiteboard] apiRef.updateScene crashed during loadScene; canvas left empty',
+                err,
+              );
+            }
           }
           if (persistedViewport) {
             applyViewportToCanvas(persistedViewport);
@@ -1013,8 +1076,19 @@ export function Whiteboard({ host }: Props) {
           }}
           excalidrawAPI={(api) => {
             apiRef.current = api as unknown as ExcalidrawApi;
-            if (sceneRef.current.elements.length > 0) {
-              apiRef.current.updateScene({ elements: sceneRef.current.elements });
+            const els = Array.isArray(sceneRef.current.elements)
+              ? sceneRef.current.elements
+              : [];
+            if (els.length > 0) {
+              try {
+                apiRef.current.updateScene({ elements: els });
+              } catch (err) {
+                console.error(
+                  '[Whiteboard] excalidrawAPI replay updateScene failed',
+                  err,
+                  els.length,
+                );
+              }
             }
             if (pendingInitialViewportRef.current) {
               applyViewportToCanvas(pendingInitialViewportRef.current);
