@@ -110,10 +110,25 @@ read together, restrained enough not to crowd the name.
 - Use the paper's own vocabulary. Substitutions invented by the
   agent are wrong.`;
 
+// Built once and reused across calls — keeping the systemPrompt
+// byte-identical lets Anthropic's prompt cache hit on every
+// subsequent call within the 5-minute TTL. The system prompt is
+// ~16KB (COLEAM_SKILL + cheat sheet + suffix) so the cache savings
+// are substantial: a cache hit pays only for the cache_read input
+// tokens (≈10% of full-input pricing) instead of re-processing the
+// full prefix.
+const CACHED_SYSTEM_PROMPT = `${COLEAM_SKILL}\n\n────────────────────────────\n\n${EXCALIDRAW_CHEAT_SHEET}${SYSTEM_SUFFIX}`;
+
 function buildSystemPrompt(): string {
-  return `${COLEAM_SKILL}\n\n────────────────────────────\n\n${EXCALIDRAW_CHEAT_SHEET}${SYSTEM_SUFFIX}`;
+  return CACHED_SYSTEM_PROMPT;
 }
 
+// Cache-friendly ordering: stable paper text comes FIRST, variable
+// per-call content (focus, instruction, scene) comes LAST. With the
+// API's prompt-cache prefix matching, refines on the same paper hit
+// the paper bytes from cache and only pay for the trailing variable
+// tail. The biggest wins come from research papers where the paper
+// markdown is 30-200KB.
 function buildUserMessage(paper: PaperRef, prompt?: string, focus?: string): string {
   const titleLine = paper.title ? `# ${paper.title}\n\n` : '';
   // When the user has supplied a focus, surface it prominently so the
@@ -437,7 +452,26 @@ async function runAgent(opts: {
       }
     } else if (ev.type === 'result') {
       usd = (ev as { total_cost_usd?: number }).total_cost_usd ?? 0;
-      cb?.onLog?.(`[result] turns=${turns} usd=${usd.toFixed(4)}`);
+      // Cache stats — when subsequent calls within the 5-minute TTL
+      // hit the cached system-prompt/user-message prefix,
+      // cache_read tokens dominate over input. The activity panel
+      // surfaces this so the user sees prompt-caching working.
+      const u = (ev as { usage?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        cache_creation_input_tokens?: number;
+        cache_read_input_tokens?: number;
+      } }).usage;
+      const cacheRead = u?.cache_read_input_tokens ?? 0;
+      const cacheCreate = u?.cache_creation_input_tokens ?? 0;
+      const inputTok = u?.input_tokens ?? 0;
+      const outputTok = u?.output_tokens ?? 0;
+      cb?.onLog?.(
+        `[result] turns=${turns} usd=${usd.toFixed(4)} input=${inputTok} output=${outputTok}` +
+          (cacheRead || cacheCreate
+            ? ` cache_read=${cacheRead} cache_create=${cacheCreate}`
+            : ''),
+      );
     } else if (ev.type === 'system') {
       // System init events carry useful info (which tools registered,
       // model, etc.). Surface a one-liner so the user sees the agent
