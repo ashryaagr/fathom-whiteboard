@@ -206,30 +206,55 @@ function synthesizePaper(composed: string): PaperPayload {
 
 // ---------- settings (tool toggles) ----------
 //
-// Two toggles, persisted to localStorage so they survive reloads. Web
-// search defaults on (historical behaviour); arxiv defaults off so a
-// user who never opens settings doesn't pay the spawn cost or have an
-// extra MCP described to the agent on every call.
+// Settings model evolved from "two flags" to "two flags + a map of
+// per-MCP-server toggles." The per-server map is populated from the
+// list of tools the agent advertises at session init (sent back via
+// the onAvailableTools callback). New servers default to OFF so a
+// freshly-detected MCP from the user's Claude account doesn't quietly
+// start running — the user has to opt in.
 
-type ToolSettings = { webSearch: boolean; arxiv: boolean };
+type ToolSettings = {
+  webSearch: boolean;
+  arxiv: boolean;
+  // Map of MCP server name → enabled. Server name is the middle
+  // segment of `mcp__<server>__<tool>` after stripping `mcp__` and
+  // before the last `__`. Examples: 'claude_ai_Hugging_Face',
+  // 'claude_ai_Slack', 'arxiv', 'excalidraw'. Local servers
+  // (excalidraw, arxiv) are NOT stored here — they're controlled by
+  // the explicit toggles above.
+  servers: Record<string, boolean>;
+  // Most recently advertised tool list, captured from agent init.
+  // Used to render server toggles even when no run is in flight.
+  availableTools: string[];
+};
 
-// Storage key bumped to v2 when the default for `arxiv` flipped from
-// false to true. New users start with both on; existing v1 users get
-// the new default once (their old key is left in place but unused).
-const SETTINGS_KEY = 'clawdSlate.toolSettings.v2';
-const DEFAULT_TOOL_SETTINGS: ToolSettings = { webSearch: true, arxiv: true };
+// v3: introduced per-server map and availableTools.
+const SETTINGS_KEY = 'clawdSlate.toolSettings.v3';
+const DEFAULT_TOOL_SETTINGS: ToolSettings = {
+  webSearch: true,
+  arxiv: true,
+  servers: {},
+  availableTools: [],
+};
 
 function loadToolSettings(): ToolSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_TOOL_SETTINGS };
+    if (!raw) return { ...DEFAULT_TOOL_SETTINGS, servers: {}, availableTools: [] };
     const parsed = JSON.parse(raw) as Partial<ToolSettings>;
     return {
       webSearch: typeof parsed.webSearch === 'boolean' ? parsed.webSearch : true,
       arxiv: typeof parsed.arxiv === 'boolean' ? parsed.arxiv : true,
+      servers:
+        parsed.servers && typeof parsed.servers === 'object'
+          ? { ...parsed.servers }
+          : {},
+      availableTools: Array.isArray(parsed.availableTools)
+        ? parsed.availableTools
+        : [],
     };
   } catch {
-    return { ...DEFAULT_TOOL_SETTINGS };
+    return { ...DEFAULT_TOOL_SETTINGS, servers: {}, availableTools: [] };
   }
 }
 
@@ -239,6 +264,78 @@ function saveToolSettings(s: ToolSettings) {
   } catch {
     /* localStorage full / disabled — ignore */
   }
+}
+
+// Parse `mcp__<server>__<tool>` into its `<server>` segment. Returns
+// null for built-in tools (Bash, WebSearch, etc.) since they don't
+// belong to an MCP server.
+function parseServerName(toolName: string): string | null {
+  if (!toolName.startsWith('mcp__')) return null;
+  const rest = toolName.slice(5);
+  const lastSep = rest.lastIndexOf('__');
+  if (lastSep === -1) return null;
+  return rest.slice(0, lastSep);
+}
+
+// Friendly name for a server: strip claude.ai prefix and replace
+// underscores with spaces.
+function displayServerName(server: string): string {
+  let s = server;
+  if (s.startsWith('claude_ai_')) s = s.slice('claude_ai_'.length);
+  return s.replace(/_/g, ' ');
+}
+
+// Default-on rule for a freshly-discovered server: Hugging Face on,
+// everything else from the user's Claude account off. Our own local
+// servers (excalidraw, arxiv) are never stored in `servers` — those
+// are controlled by the dedicated toggles.
+function defaultServerEnabled(server: string): boolean {
+  if (server === 'claude_ai_Hugging_Face') return true;
+  return false;
+}
+
+// Build the disallowedTools list the agent should receive. We deny
+// every tool whose server is toggled OFF (or whose server is unknown
+// and defaults to OFF).
+function computeDisallowedTools(settings: ToolSettings): string[] {
+  const disallowed: string[] = [];
+  for (const tool of settings.availableTools) {
+    const server = parseServerName(tool);
+    if (!server) continue;
+    // Local servers — controlled by the explicit toggles, never by
+    // disallowedTools. (For arxiv, the OFF case is enforced by not
+    // spawning the MCP at all, so its tools never appear; for
+    // excalidraw it's always on.)
+    if (server === 'excalidraw' || server === 'arxiv') continue;
+    const enabled =
+      settings.servers[server] !== undefined
+        ? settings.servers[server]
+        : defaultServerEnabled(server);
+    if (!enabled) disallowed.push(tool);
+  }
+  return disallowed;
+}
+
+// Group a flat tools list by MCP server. Local servers (excalidraw,
+// arxiv) and built-ins are filtered out — those are surfaced via the
+// dedicated toggles, not the dynamic per-server list.
+function groupToolsByServer(
+  tools: string[],
+): Array<{ server: string; tools: string[] }> {
+  const groups = new Map<string, string[]>();
+  for (const t of tools) {
+    const s = parseServerName(t);
+    if (!s) continue;
+    if (s === 'excalidraw' || s === 'arxiv') continue;
+    const arr = groups.get(s) ?? [];
+    arr.push(t);
+    groups.set(s, arr);
+  }
+  return Array.from(groups.entries())
+    .map(([server, tools]) => ({ server, tools }))
+    .sort((a, b) =>
+      displayServerName(a.server).localeCompare(displayServerName(b.server)),
+    );
 }
 
 export function App() {
@@ -275,6 +372,37 @@ export function App() {
     toolSettingsRef.current = toolSettings;
     saveToolSettings(toolSettings);
   }, [toolSettings]);
+
+  // On first mount, hydrate the available-tools list from disk —
+  // captured during a prior session's agent init. This means the
+  // settings popover lists the user's MCP servers immediately even
+  // before the next agent run lands an init event.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const tools = await (
+          window.wb as unknown as { getAvailableTools?: () => Promise<string[]> }
+        ).getAvailableTools?.();
+        if (cancelled || !Array.isArray(tools) || tools.length === 0) return;
+        setToolSettings((prev) => ({ ...prev, availableTools: tools }));
+      } catch {
+        /* best-effort hydration */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Each agent session emits its tool list at init; capture and merge
+  // so newly-discovered MCPs become togglable on the next render.
+  // Stored behind a ref because the host (built once via useMemo)
+  // closes over the callback for the entire session.
+  const handleAvailableToolsRef = useRef<(tools: string[]) => void>(() => {});
+  handleAvailableToolsRef.current = (tools: string[]) => {
+    setToolSettings((prev) => ({ ...prev, availableTools: tools }));
+  };
 
   useEffect(() => {
     (async () => {
@@ -340,11 +468,18 @@ export function App() {
             activeFocus = undefined;
           }
 
+          const toolsPayload = {
+            webSearch: toolSettingsRef.current.webSearch,
+            arxiv: toolSettingsRef.current.arxiv,
+            disallowed: computeDisallowedTools(toolSettingsRef.current),
+          };
           void window.wb
             .generate(
-              { paper: activePaper, focus: activeFocus, tools: toolSettingsRef.current },
+              { paper: activePaper, focus: activeFocus, tools: toolsPayload },
               {
                 onLog: cb.onLog,
+                onAvailableTools: (tools) =>
+                  handleAvailableToolsRef.current(tools),
                 onScene: (elements) =>
                   cb.onScene?.({
                     elements: elements as WhiteboardScene['elements'],
@@ -389,15 +524,22 @@ export function App() {
             setPaper(activePaper);
             void window.wb.paper.save(activePaper);
           }
+          const refineToolsPayload = {
+            webSearch: toolSettingsRef.current.webSearch,
+            arxiv: toolSettingsRef.current.arxiv,
+            disallowed: computeDisallowedTools(toolSettingsRef.current),
+          };
           void window.wb
             .refine(
               {
                 paper: activePaper,
                 scene: { elements: scene.elements },
                 instruction,
-                tools: toolSettingsRef.current,
+                tools: refineToolsPayload,
               },
               {
+                onAvailableTools: (tools) =>
+                  handleAvailableToolsRef.current(tools),
                 onLog: cb.onLog,
                 onScene: (elements) =>
                   cb.onScene?.({
@@ -741,9 +883,15 @@ function TopBar({
   );
 }
 
-// Lightweight popover anchored under the gear icon. Click-outside or
-// Esc closes. Two toggles only — keep this surface minimal per the
-// product's "simple, minimal options" rule.
+// Settings popover with two sections:
+//   1. The two always-visible toggles for our own integrations
+//      (web search, arxiv).
+//   2. A dynamic list of MCP servers the SDK reported during the
+//      last session — typically the user's claude.ai connectors
+//      (Hugging Face, Gmail, Slack, …). Off by default, except
+//      Hugging Face which the user has approved up-front. New
+//      servers from future runs default to OFF — the user has to
+//      opt in to a freshly-discovered MCP.
 function SettingsPopover({
   settings,
   onChange,
@@ -761,15 +909,23 @@ function SettingsPopover({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const groups = useMemo(
+    () => groupToolsByServer(settings.availableTools),
+    [settings.availableTools],
+  );
+
+  const toggleServer = (server: string, enabled: boolean) => {
+    onChange({
+      ...settings,
+      servers: { ...settings.servers, [server]: enabled },
+    });
+  };
+
   return (
     <>
       <div
         onClick={onClose}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          zIndex: 90,
-        }}
+        style={{ position: 'absolute', inset: 0, zIndex: 90 }}
         aria-hidden
       />
       <div
@@ -779,7 +935,9 @@ function SettingsPopover({
           position: 'absolute',
           top: 48,
           right: 14,
-          width: 280,
+          width: 320,
+          maxHeight: 'calc(100vh - 70px)',
+          overflowY: 'auto',
           padding: 14,
           background: '#fff',
           borderRadius: 12,
@@ -790,32 +948,79 @@ function SettingsPopover({
             "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
         }}
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#86868b',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Tools the agent can use
-        </div>
+        <SectionLabel>Built-in tools</SectionLabel>
         <ToggleRow
-          label="Web search"
-          hint="Look up cited prior work or unfamiliar terms online."
+          label="Web search & fetch"
+          hint="Look up cited prior work or unfamiliar terms; fetch URL contents."
           checked={settings.webSearch}
           onChange={(v) => onChange({ ...settings, webSearch: v })}
         />
         <ToggleRow
           label="arXiv"
-          hint="Fetch papers from arxiv.org by id or query."
+          hint="Fetch research papers from arxiv.org by id or query."
           checked={settings.arxiv}
           onChange={(v) => onChange({ ...settings, arxiv: v })}
         />
+
+        <SectionLabel style={{ marginTop: 14 }}>
+          MCP servers from your Claude account
+        </SectionLabel>
+        {groups.length === 0 ? (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#86868b',
+              padding: '8px 0 4px',
+              lineHeight: 1.5,
+            }}
+          >
+            None discovered yet. Run a generation once and the
+            servers your Claude account has connected will appear
+            here.
+          </div>
+        ) : (
+          groups.map(({ server, tools }) => {
+            const checked =
+              settings.servers[server] !== undefined
+                ? settings.servers[server]
+                : defaultServerEnabled(server);
+            return (
+              <ToggleRow
+                key={server}
+                label={displayServerName(server)}
+                hint={`${tools.length} tool${tools.length === 1 ? '' : 's'}`}
+                checked={checked}
+                onChange={(v) => toggleServer(server, v)}
+              />
+            );
+          })
+        )}
       </div>
     </>
+  );
+}
+
+function SectionLabel({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: '#86868b',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+        marginBottom: 4,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 

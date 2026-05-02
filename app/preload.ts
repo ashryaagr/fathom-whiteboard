@@ -6,9 +6,15 @@ type PaperPayload =
 
 type Viewport = { scrollX: number; scrollY: number; zoom: number };
 
-// Tool toggles surfaced by the renderer's settings popover. Both
-// optional; main applies sane defaults (webSearch on, arxiv off).
-type ToolSettings = { webSearch?: boolean; arxiv?: boolean };
+// Tool toggles surfaced by the renderer's settings popover. All
+// fields optional; main applies sane defaults (webSearch on, arxiv
+// on). `disallowed` is an exact-name list of tools the user has
+// turned off via per-MCP-server toggles.
+type ToolSettings = {
+  webSearch?: boolean;
+  arxiv?: boolean;
+  disallowed?: string[];
+};
 
 const wbApi = {
   paper: {
@@ -38,6 +44,7 @@ const wbApi = {
     cb: {
       onLog?: (text: string) => void;
       onScene?: (elements: unknown[]) => void;
+      onAvailableTools?: (tools: string[]) => void;
       onDone?: (info: { elements: unknown[]; usd: number; turns: number }) => void;
       onError?: (message: string) => void;
     },
@@ -49,6 +56,8 @@ const wbApi = {
       const handler = (_e: Electron.IpcRendererEvent, msg: Record<string, unknown>) => {
         if (msg.type === 'log') cb.onLog?.(String(msg.text ?? ''));
         else if (msg.type === 'scene') cb.onScene?.(msg.elements as unknown[]);
+        else if (msg.type === 'available-tools')
+          cb.onAvailableTools?.((msg.tools as string[]) ?? []);
         else if (msg.type === 'done')
           cb.onDone?.(
             msg as unknown as { elements: unknown[]; usd: number; turns: number },
@@ -61,6 +70,11 @@ const wbApi = {
       ipcRenderer.on(channel, handler);
       return { channel };
     })(),
+
+  // Read the most recently captured tool list (from the last agent
+  // run). Empty array on first launch before any run has happened.
+  getAvailableTools: (): Promise<string[]> =>
+    ipcRenderer.invoke('tools:available:get'),
   refine: (
     req: {
       paper: PaperPayload;
@@ -71,6 +85,7 @@ const wbApi = {
     cb: {
       onLog?: (text: string) => void;
       onScene?: (elements: unknown[]) => void;
+      onAvailableTools?: (tools: string[]) => void;
       onDone?: (info: { elements: unknown[] }) => void;
       onError?: (message: string) => void;
     },
@@ -82,6 +97,8 @@ const wbApi = {
       const handler = (_e: Electron.IpcRendererEvent, msg: Record<string, unknown>) => {
         if (msg.type === 'log') cb.onLog?.(String(msg.text ?? ''));
         else if (msg.type === 'scene') cb.onScene?.(msg.elements as unknown[]);
+        else if (msg.type === 'available-tools')
+          cb.onAvailableTools?.((msg.tools as string[]) ?? []);
         else if (msg.type === 'done')
           cb.onDone?.(msg as unknown as { elements: unknown[] });
         else if (msg.type === 'error') cb.onError?.(String(msg.message ?? ''));

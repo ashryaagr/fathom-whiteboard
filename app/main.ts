@@ -374,9 +374,44 @@ function resolveArxivMcp(
 }
 
 // Tool-toggle payload from the renderer's settings popover. Defaults
-// (web on, arxiv off) match the historical behaviour for users who
-// never open settings.
-type ToolSettings = { webSearch?: boolean; arxiv?: boolean };
+// (web on, arxiv on) apply when fields are missing. `disallowed` is
+// the list of exact tool names to deny — the renderer computes it
+// from per-MCP-server toggles backed by the discovery list it
+// receives via `tools:available`.
+type ToolSettings = {
+  webSearch?: boolean;
+  arxiv?: boolean;
+  disallowed?: string[];
+};
+
+// Persist the most recent advertised tool list so the settings UI
+// can render the user's MCP servers even on a fresh launch (before
+// the next agent run reaches its system-init event).
+function availableToolsPath(): string {
+  return join(app.getPath('userData'), 'available-tools.json');
+}
+
+async function persistAvailableTools(tools: string[]): Promise<void> {
+  try {
+    await writeFile(
+      availableToolsPath(),
+      JSON.stringify({ tools, capturedAt: new Date().toISOString() }, null, 2),
+      'utf-8',
+    );
+  } catch {
+    /* best-effort */
+  }
+}
+
+ipcMain.handle('tools:available:get', async (): Promise<string[]> => {
+  try {
+    const raw = await readFile(availableToolsPath(), 'utf-8');
+    const parsed = JSON.parse(raw) as { tools?: string[] };
+    return Array.isArray(parsed.tools) ? parsed.tools : [];
+  } catch {
+    return [];
+  }
+});
 
 async function runStreamingGenerate(
   event: IpcMainInvokeEvent,
@@ -388,7 +423,8 @@ async function runStreamingGenerate(
 ) {
   const sender = event.sender;
   const webSearch = tools.webSearch !== false;
-  const arxivMcp = tools.arxiv ? resolveArxivMcp(event) : undefined;
+  const arxivMcp = tools.arxiv === false ? undefined : resolveArxivMcp(event);
+  const disallowed = Array.isArray(tools.disallowed) ? tools.disallowed : [];
   try {
     const { scene, usd, turns } = await generateWhiteboard(
       paper,
@@ -403,6 +439,11 @@ async function runStreamingGenerate(
           if (!sender.isDestroyed())
             sender.send(channel, { type: 'scene', elements: s.elements });
         },
+        onAvailableTools: (toolList) => {
+          void persistAvailableTools(toolList);
+          if (!sender.isDestroyed())
+            sender.send(channel, { type: 'available-tools', tools: toolList });
+        },
       },
       undefined,
       focus,
@@ -410,6 +451,7 @@ async function runStreamingGenerate(
       abortController,
       arxivMcp,
       webSearch,
+      disallowed,
     );
     if (!sender.isDestroyed())
       sender.send(channel, {
@@ -467,7 +509,8 @@ ipcMain.handle(
     const paperRef = buildPaperRef(req.paper);
     const tools = req.tools ?? {};
     const webSearch = tools.webSearch !== false;
-    const arxivMcp = tools.arxiv ? resolveArxivMcp(event) : undefined;
+    const arxivMcp = tools.arxiv === false ? undefined : resolveArxivMcp(event);
+    const disallowed = Array.isArray(tools.disallowed) ? tools.disallowed : [];
     void (async () => {
       const sender = event.sender;
       try {
@@ -487,12 +530,18 @@ ipcMain.handle(
               if (!sender.isDestroyed())
                 sender.send(channel, { type: 'scene', elements: s.elements });
             },
+            onAvailableTools: (toolList) => {
+              void persistAvailableTools(toolList);
+              if (!sender.isDestroyed())
+                sender.send(channel, { type: 'available-tools', tools: toolList });
+            },
           },
           undefined,
           resolveClaudeExecutablePath(),
           ctrl,
           arxivMcp,
           webSearch,
+          disallowed,
         );
         if (!sender.isDestroyed())
           sender.send(channel, { type: 'done', elements: scene.elements });

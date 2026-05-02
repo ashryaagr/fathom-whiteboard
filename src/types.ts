@@ -25,6 +25,13 @@ export type GenerateCallbacks = {
   onAssistantText?: (delta: string) => void;
   onDone?: (result: { scene: WhiteboardScene; turns: number; usd: number }) => void;
   onError?: (err: Error) => void;
+  // Fired once at the start of each session with the FULL list of
+  // tools the agent has visible (built-ins + every MCP tool the
+  // claude binary loaded). Hosts persist this so the settings UI
+  // can list which user-level MCP servers exist and let the user
+  // toggle them on/off (the toggles round-trip back as
+  // `disallowedTools` on the next call).
+  onAvailableTools?: (tools: string[]) => void;
 };
 
 // Reference to the paper being explained. Pass either the markdown text directly

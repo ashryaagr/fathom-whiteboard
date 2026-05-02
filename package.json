@@ -1,6 +1,6 @@
 {
   "name": "fathom-whiteboard",
-  "version": "0.1.16",
+  "version": "0.1.18",
   "description": "Generate explanatory whiteboards from research papers using Claude + excalidraw-mcp + the coleam00 diagram SKILL.",
   "license": "MIT",
   "author": "Ashrya <ashryaagr@gmail.com>",

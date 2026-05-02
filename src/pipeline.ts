@@ -135,19 +135,26 @@ const CACHED_SYSTEM_PROMPT = `${COLEAM_SKILL}\n\n──────────�
 // the small arxiv tail re-encodes when the toggle is on.
 const ARXIV_APPENDIX = `
 
-## 4. Optional: arxiv access
+## 4. arxiv is the paper-fetching tool
 
-You can pull cited prior work from arxiv when it would meaningfully
-sharpen the diagram. Three tools are available:
+Whenever you need to download a research paper — to read prior work
+the user's paper cites, to compare a method to another paper the
+user mentions, or because the user has explicitly asked for a paper
+by id or title — use the arxiv MCP. Three tools are available:
 
 - \`mcp__arxiv__search_papers\` — search arxiv by query
 - \`mcp__arxiv__download_paper\` — fetch a paper's text by arxiv id
 - \`mcp__arxiv__list_downloaded_papers\` — list what's already local
 
-Use sparingly. The user's paper is the primary source. Reach for
-arxiv only when the paper directly cites a prior work whose mechanism
-you need to name correctly on the canvas, and you can't infer it from
-context.`;
+Do NOT use other paper-search tools (Hugging Face paper search,
+generic web search for PDFs, etc.) for this. arxiv is the canonical
+source and the only one whose downloads land in the workspace where
+later steps can re-read them.
+
+The user's primary paper remains the primary source for the diagram.
+Reach for arxiv only when prior work needs to be named correctly,
+when a cited mechanism needs verification, or when the user
+explicitly directs you to fetch a paper.`;
 
 function buildSystemPrompt(opts: { arxivEnabled: boolean }): string {
   return opts.arxivEnabled
@@ -285,6 +292,12 @@ async function runAgent(opts: {
   // MCP that exposes search_papers / download_paper / list_downloaded_papers.
   // When undefined, the agent simply doesn't have arxiv access.
   arxivMcp?: { command: string; args: string[]; env?: Record<string, string> };
+  // Tool names to deny outright — the model sees neither the
+  // descriptions nor the call sites. Host computes this from the
+  // user's settings (which MCP servers they've turned off). Each
+  // entry must be an exact tool name as advertised by the SDK init
+  // event (e.g. `mcp__claude_ai_Slack__slack_send_message`).
+  disallowedTools?: string[];
   // When the SDK runs inside an Electron app.asar bundle, its default
   // resolution of the bundled `claude` binary path (via import.meta.url)
   // points at `app.asar/.../claude`. asar's hook lets Electron Read that
@@ -309,6 +322,7 @@ async function runAgent(opts: {
     paperReadPath,
     webSearch = true,
     arxivMcp,
+    disallowedTools,
     pathToClaudeCodeExecutable,
     abortController,
     cb,
@@ -329,7 +343,7 @@ async function runAgent(opts: {
   const allowedTools = [
     ...EXCALIDRAW_TOOLS,
     ...(arxivMcp ? ARXIV_TOOLS : []),
-    ...(webSearch ? ['WebSearch'] : []),
+    ...(webSearch ? ['WebSearch', 'WebFetch'] : []),
     'Read',
     'Glob',
     'Grep',
@@ -341,7 +355,7 @@ async function runAgent(opts: {
   // whether to advertise Read in messaging — the underlying tool is
   // available either way.
   const builtinTools = [
-    ...(webSearch ? ['WebSearch'] : []),
+    ...(webSearch ? ['WebSearch', 'WebFetch'] : []),
     'Read',
     'Glob',
     'Grep',
@@ -375,7 +389,14 @@ async function runAgent(opts: {
       systemPrompt,
       cwd: safeAgentCwd(),
       mcpServers,
+      // We deliberately leave strictMcpConfig OFF so the underlying
+      // claude binary inherits the user's claude.ai MCP servers
+      // (Hugging_Face, Gmail, Slack, …). The host then uses
+      // `disallowedTools` to opt OUT of the ones the user hasn't
+      // approved in settings. This way the agent has access to the
+      // user's personal toolbox by user choice, not by accident.
       allowedTools,
+      disallowedTools,
       // Builtin-tool list — kept aligned with allowedTools so the
       // SDK actually loads what we advertise. Adding more here
       // expands what Claude can call; allowedTools above is the gate
@@ -553,9 +574,13 @@ async function runAgent(opts: {
       // *started* even before the first tool_use lands.
       const subtype = (ev as { subtype?: string }).subtype;
       if (subtype === 'init') {
-        const tools = ((ev as { tools?: string[] }).tools ?? []).join(',');
+        const toolsArr = (ev as { tools?: string[] }).tools ?? [];
+        const tools = toolsArr.join(',');
         const model = (ev as { model?: string }).model ?? '?';
         cb?.onLog?.(`[system] init model=${model} tools=${tools}`);
+        // Fire the discovery callback so the host can persist the
+        // tool list and surface it in settings.
+        cb?.onAvailableTools?.(toolsArr);
       }
     } else if (ev.type === 'stream_event') {
       // Per-token deltas from the model. The SDK wraps Anthropic's
@@ -626,6 +651,7 @@ export async function generateWhiteboard(
   abortController?: AbortController,
   arxivMcp?: { command: string; args: string[]; env?: Record<string, string> },
   webSearch: boolean = true,
+  disallowedTools?: string[],
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
@@ -637,6 +663,7 @@ export async function generateWhiteboard(
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
       webSearch,
       arxivMcp,
+      disallowedTools,
       pathToClaudeCodeExecutable,
       abortController,
       cb,
@@ -663,6 +690,7 @@ export async function refineWhiteboard(
   abortController?: AbortController,
   arxivMcp?: { command: string; args: string[]; env?: Record<string, string> },
   webSearch: boolean = true,
+  disallowedTools?: string[],
 ): Promise<{ scene: WhiteboardScene; turns: number; usd: number }> {
   const handle = await resolveMcp(mcpOverride);
   const ownsHandle = !mcpOverride;
@@ -681,6 +709,7 @@ export async function refineWhiteboard(
       paperReadPath: paper.kind === 'path' ? paper.absPath : undefined,
       webSearch,
       arxivMcp,
+      disallowedTools,
       pathToClaudeCodeExecutable,
       abortController,
       cb,
