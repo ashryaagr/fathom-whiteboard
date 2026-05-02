@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { COLEAM_SKILL } from './skill.js';
+import { EXCALIDRAW_CHEAT_SHEET } from './recall-cheat-sheet.js';
 import {
   HOSTED_EXCALIDRAW_MCP_URL,
   spawnLocalMcp,
@@ -31,18 +32,24 @@ function safeAgentCwd(): string {
   return '/';
 }
 
-const EXCALIDRAW_TOOLS = [
-  'mcp__excalidraw__read_me',
-  'mcp__excalidraw__create_view',
-];
+// Only one MCP tool we want the agent to call. `read_me` is now
+// inlined into the system prompt so we don't burn a tool turn on it.
+// The MCP server still exposes read_me for backward compat, but it's
+// not in our allowedTools list — the agent never sees it.
+const EXCALIDRAW_TOOLS = ['mcp__excalidraw__create_view'];
 
-// System prompt = SKILL principles + Fathom-specific suffix.
+// System prompt = SKILL principles + Excalidraw element-format
+// reference (formerly returned by `read_me`) + Fathom-specific
+// suffix. By inlining the cheat sheet we save one full tool
+// round-trip per generation — the model already has every detail it
+// needs about element types, colors, camera sizes, etc., on session
+// start.
 //
-// The suffix tells the agent two things the SKILL doesn't:
-//   (1) HOW to use the MCP — read_me once, multiple create_view calls
-//       so the canvas updates progressively. Tool mechanics, not
-//       diagram content.
-//   (2) The subject is a research paper, and every named component
+// The suffix tells the agent two things neither the SKILL nor the
+// cheat sheet covers:
+//   (1) HOW to drive create_view progressively (multiple calls,
+//       restoreCheckpoint between them).
+//   (2) The subject is a research paper; every named component
 //       must be paired with the question it answers about the
 //       paper's ground problem.
 //
@@ -55,18 +62,17 @@ const SYSTEM_SUFFIX = `
 # Fathom whiteboard
 
 You are explaining a research paper as a teaching whiteboard. The
-paper is provided in the user message. Apply the SKILL above, then
-layer the specifics below.
+paper is provided in the user message. Apply the SKILL and the
+Excalidraw element-format reference above, then layer the specifics
+below.
 
 ## 1. How to use the MCP
 
-Call \`mcp__excalidraw__read_me\` once at the start to load the
-element-format reference.
-
-Then build the diagram in **multiple \`create_view\` calls** so the
-canvas updates progressively. Each subsequent call begins with a
-\`restoreCheckpoint\` element referencing the \`checkpointId\` returned
-by the previous call, then appends new elements.
+You have ONE tool: \`mcp__excalidraw__create_view\`. Build the
+diagram in **multiple \`create_view\` calls** so the canvas updates
+progressively. Each subsequent call begins with a
+\`restoreCheckpoint\` element referencing the \`checkpointId\`
+returned by the previous call, then appends new elements.
 
 Every call should leave the canvas in a coherent intermediate state
 that a viewer would recognise as a meaningful step toward the final
@@ -76,6 +82,9 @@ one contains is your judgement — the subject decides.
 If a call produced something wrong (overlap, mislabelled arrow,
 wrong proportions), use the \`delete\` element inside the next call
 to remove and replace.
+
+You do NOT need to call any \`read_me\` tool — the format reference
+is already in your context above. Start drawing immediately.
 
 ## 2. Ground-problem framing
 
@@ -102,7 +111,7 @@ read together, restrained enough not to crowd the name.
   agent are wrong.`;
 
 function buildSystemPrompt(): string {
-  return `${COLEAM_SKILL}${SYSTEM_SUFFIX}`;
+  return `${COLEAM_SKILL}\n\n────────────────────────────\n\n${EXCALIDRAW_CHEAT_SHEET}${SYSTEM_SUFFIX}`;
 }
 
 function buildUserMessage(paper: PaperRef, prompt?: string, focus?: string): string {
@@ -249,9 +258,18 @@ async function runAgent(opts: {
     cb,
   } = opts;
 
-  const allowedTools = paperReadPath
-    ? [...EXCALIDRAW_TOOLS, 'Read']
-    : EXCALIDRAW_TOOLS;
+  // WebSearch lets the agent look up external context the paper
+  // references (a cited prior work, a technical term it doesn't
+  // define). Read is added when the paper itself is a file path the
+  // agent has to open. Everything else (Bash, Grep, Glob, ToolSearch,
+  // the rest of the claude_code preset) stays disabled so the
+  // single-purpose JSON-emission task isn't taxed by tool
+  // descriptions it never uses.
+  const allowedTools = [
+    ...EXCALIDRAW_TOOLS,
+    'WebSearch',
+    ...(paperReadPath ? ['Read'] : []),
+  ];
 
   const stream = query({
     prompt: userMessage,
@@ -266,12 +284,13 @@ async function runAgent(opts: {
         excalidraw: { type: 'http', url: mcpUrl },
       },
       allowedTools,
-      // Disable the claude_code builtin-tool surface (Bash, Glob, Grep,
-      // WebSearch, ToolSearch, …). Without this the SDK defaults to the
-      // full preset, which costs an extra ToolSearch turn at session
-      // start and a per-turn input-token tax for unused tool descriptions.
-      // Read is the one builtin we keep when the paper is a file path.
-      tools: paperReadPath ? ['Read'] : [],
+      // Builtin-tool allowlist. The claude_code preset auto-loads ~40
+      // tools (Bash, Glob, Grep, ToolSearch, …) which we don't need
+      // for a single-purpose diagram-emission task; each one taxes
+      // input-token budget per turn. We keep WebSearch (so the agent
+      // can look up a cited reference or a technical term) and Read
+      // (only when the paper is on disk).
+      tools: ['WebSearch', ...(paperReadPath ? ['Read'] : [])],
       // Disable host-side setting sources (CLAUDE.md, project config,
       // user config) so the pipeline runs with exactly the prompt we
       // authored, nothing else.
@@ -300,11 +319,11 @@ async function runAgent(opts: {
   // the activity panel makes it obvious where seconds are going. Phases:
   //   submit  → query() returned, stream awaiting
   //   ttft    → first non-system event (model has actually started)
-  //   read_me → tool_use mcp__excalidraw__read_me went out
-  //   tool_result → first tool_result for read_me came back
   //   create_view_start → input_json_delta begun for create_view
   //   create_view_done  → block_stop for the create_view tool_use
   //   total   → run finished
+  // (read_me used to fire here too; it's now inlined into the system
+  // prompt so the agent goes straight from ttft → create_view_start.)
   const t0 = Date.now();
   const tElapsed = () => ((Date.now() - t0) / 1000).toFixed(2);
   const checkpoint = (phase: string) => {
@@ -376,7 +395,6 @@ async function runAgent(opts: {
           const id = String(block.id ?? '');
           cb?.onToolUse?.(name, block.input);
           cb?.onLog?.(`[tool_use] ${name} ${id ? `id=${id.slice(0, 8)} ` : ''}input=${summarize(block.input, 400)}`);
-          if (name === 'mcp__excalidraw__read_me') checkpoint('read_me_call');
           if (name === 'mcp__excalidraw__create_view') checkpoint('create_view_done');
           if (name === 'mcp__excalidraw__create_view') {
             const next = resolveSceneFromInput(block.input, scene);
@@ -540,8 +558,7 @@ export async function refineWhiteboard(
       `## Current whiteboard scene\n\n` +
       `\`\`\`json\n${sceneJson}\n\`\`\`\n\n` +
       `## User instruction\n\n${userInstruction}\n\n` +
-      `Apply the instruction. Call \`mcp__excalidraw__read_me\` if you need a refresher, ` +
-      `then call \`mcp__excalidraw__create_view\` with the updated elements JSON.`;
+      `Apply the instruction. Call \`mcp__excalidraw__create_view\` with the updated elements JSON.`;
     const result = await runAgent({
       systemPrompt: buildSystemPrompt(),
       userMessage,
