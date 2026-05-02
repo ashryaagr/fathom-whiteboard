@@ -6,7 +6,7 @@
 // main process; the renderer is just <Whiteboard> with a paste-aware
 // landing screen on top.
 
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
@@ -81,13 +81,29 @@ function resolveClaudeExecutablePath(): string | undefined {
   return undefined;
 }
 
-// Per-session work dir holds pasted assets (images, PDFs) keyed by
-// session id, plus the persisted scene + viewport. We use a stable
-// "last session" dir so closing + reopening the app restores the
-// last whiteboard, mirroring the PDF reader's behaviour.
-function workDir(): string {
+// Per-window session isolation. Each BrowserWindow has its own
+// session id stored in `windowSessions` and its own work dir under
+// `sessions/<sessionId>`. The first window on app launch reuses
+// "last" so closing + reopening restores the previous whiteboard
+// (mirrors the PDF reader's behaviour). Cmd+N spawns a new window
+// with a fresh uuid session so windows don't clobber each other.
+const FIRST_SESSION_ID = 'last';
+const windowSessions = new Map<number, string>();
+
+function newSessionId(): string {
+  return randomBytes(8).toString('hex');
+}
+
+function sessionFor(event?: IpcMainInvokeEvent): string {
+  if (!event) return FIRST_SESSION_ID;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return FIRST_SESSION_ID;
+  return windowSessions.get(win.id) ?? FIRST_SESSION_ID;
+}
+
+function workDir(event?: IpcMainInvokeEvent): string {
   const root = app.getPath('userData');
-  return join(root, 'sessions', 'last');
+  return join(root, 'sessions', sessionFor(event));
 }
 
 const SCENE_FILE = 'whiteboard.excalidraw';
@@ -99,14 +115,14 @@ type PaperPayload =
   | { kind: 'text'; markdown: string; title?: string }
   | { kind: 'path'; absPath: string; title?: string };
 
-async function ensureWorkDir(): Promise<string> {
-  const dir = workDir();
+async function ensureWorkDir(event?: IpcMainInvokeEvent): Promise<string> {
+  const dir = workDir(event);
   await mkdir(join(dir, ASSETS_DIR), { recursive: true });
   return dir;
 }
 
-async function loadPaper(): Promise<PaperPayload | null> {
-  const f = join(workDir(), PAPER_FILE);
+async function loadPaper(event?: IpcMainInvokeEvent): Promise<PaperPayload | null> {
+  const f = join(workDir(event), PAPER_FILE);
   if (!existsSync(f)) return null;
   try {
     return JSON.parse(await readFile(f, 'utf-8')) as PaperPayload;
@@ -115,13 +131,13 @@ async function loadPaper(): Promise<PaperPayload | null> {
   }
 }
 
-async function savePaper(p: PaperPayload): Promise<void> {
-  const dir = await ensureWorkDir();
+async function savePaper(event: IpcMainInvokeEvent, p: PaperPayload): Promise<void> {
+  const dir = await ensureWorkDir(event);
   await writeFile(join(dir, PAPER_FILE), JSON.stringify(p), 'utf-8');
 }
 
-async function loadScene(): Promise<WhiteboardScene | null> {
-  const f = join(workDir(), SCENE_FILE);
+async function loadScene(event?: IpcMainInvokeEvent): Promise<WhiteboardScene | null> {
+  const f = join(workDir(event), SCENE_FILE);
   if (!existsSync(f)) return null;
   try {
     const raw = JSON.parse(await readFile(f, 'utf-8')) as {
@@ -134,8 +150,8 @@ async function loadScene(): Promise<WhiteboardScene | null> {
   }
 }
 
-async function saveScene(scene: WhiteboardScene): Promise<void> {
-  const dir = await ensureWorkDir();
+async function saveScene(event: IpcMainInvokeEvent | undefined, scene: WhiteboardScene): Promise<void> {
+  const dir = await ensureWorkDir(event);
   const wrapped = {
     type: 'excalidraw',
     version: 2,
@@ -146,12 +162,12 @@ async function saveScene(scene: WhiteboardScene): Promise<void> {
   await writeFile(join(dir, SCENE_FILE), JSON.stringify(wrapped, null, 2), 'utf-8');
 }
 
-async function loadViewport(): Promise<{
+async function loadViewport(event?: IpcMainInvokeEvent): Promise<{
   scrollX: number;
   scrollY: number;
   zoom: number;
 } | null> {
-  const f = join(workDir(), VIEWPORT_FILE);
+  const f = join(workDir(event), VIEWPORT_FILE);
   if (!existsSync(f)) return null;
   try {
     const raw = JSON.parse(await readFile(f, 'utf-8')) as Partial<{
@@ -172,17 +188,17 @@ async function loadViewport(): Promise<{
   }
 }
 
-async function saveViewport(vp: {
+async function saveViewport(event: IpcMainInvokeEvent, vp: {
   scrollX: number;
   scrollY: number;
   zoom: number;
 }): Promise<void> {
-  const dir = await ensureWorkDir();
+  const dir = await ensureWorkDir(event);
   await writeFile(join(dir, VIEWPORT_FILE), JSON.stringify(vp), 'utf-8');
 }
 
-async function clearSession(): Promise<void> {
-  const dir = workDir();
+async function clearSession(event: IpcMainInvokeEvent): Promise<void> {
+  const dir = workDir(event);
   for (const f of [SCENE_FILE, VIEWPORT_FILE, PAPER_FILE]) {
     const p = join(dir, f);
     if (existsSync(p)) {
@@ -195,27 +211,28 @@ async function clearSession(): Promise<void> {
   }
 }
 
-// Move the current `sessions/last/` snapshot into a timestamped
-// archive dir so the user can come back to it later, then clear `last`.
-// Used by the "Save & New" path on the top-bar New button — the user
-// keeps a recoverable copy of the whiteboard they just left rather than
-// losing the API spend they paid to generate it.
-async function archiveSession(): Promise<{ archivedAt: string | null }> {
+// Move the calling window's session snapshot into a timestamped
+// archive dir so the user can come back to it later, then clear the
+// session. Used by the "Save & New" path on the top-bar New button —
+// the user keeps a recoverable copy of the whiteboard they just left
+// rather than losing the API spend they paid to generate it.
+async function archiveSession(event: IpcMainInvokeEvent): Promise<{ archivedAt: string | null }> {
   const root = app.getPath('userData');
-  const last = join(root, 'sessions', 'last');
+  const sid = sessionFor(event);
+  const src = join(root, 'sessions', sid);
   const hasContent =
-    existsSync(join(last, PAPER_FILE)) ||
-    existsSync(join(last, SCENE_FILE));
+    existsSync(join(src, PAPER_FILE)) ||
+    existsSync(join(src, SCENE_FILE));
   if (!hasContent) return { archivedAt: null };
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const archiveDir = join(root, 'sessions', `archive-${ts}`);
   await mkdir(archiveDir, { recursive: true });
   for (const f of [SCENE_FILE, VIEWPORT_FILE, PAPER_FILE]) {
-    const src = join(last, f);
-    if (!existsSync(src)) continue;
+    const sf = join(src, f);
+    if (!existsSync(sf)) continue;
     try {
-      const data = await readFile(src);
+      const data = await readFile(sf);
       await writeFile(join(archiveDir, f), data);
     } catch {
       /* best-effort copy; missing or unreadable file is fine */
@@ -240,11 +257,11 @@ function safeAssetName(name: string): string {
   return cleaned.length > 0 ? cleaned : 'asset';
 }
 
-async function saveAsset(args: {
+async function saveAsset(event: IpcMainInvokeEvent, args: {
   filename: string;
   bytes: ArrayBufferLike;
 }): Promise<{ absPath: string }> {
-  const dir = await ensureWorkDir();
+  const dir = await ensureWorkDir(event);
   const id = randomBytes(4).toString('hex');
   const safe = safeAssetName(args.filename);
   const absPath = join(dir, ASSETS_DIR, `${id}-${safe}`);
@@ -254,24 +271,24 @@ async function saveAsset(args: {
 
 // ---------- IPC ----------
 
-ipcMain.handle('paper:load', async () => loadPaper());
-ipcMain.handle('paper:save', async (_e, payload: PaperPayload) => {
-  await savePaper(payload);
+ipcMain.handle('paper:load', async (e) => loadPaper(e));
+ipcMain.handle('paper:save', async (e, payload: PaperPayload) => {
+  await savePaper(e, payload);
 });
-ipcMain.handle('paper:clear', async () => clearSession());
-ipcMain.handle('session:archive', async () => archiveSession());
-ipcMain.handle('asset:save', async (_e, args: { filename: string; bytes: ArrayBuffer }) =>
-  saveAsset(args),
+ipcMain.handle('paper:clear', async (e) => clearSession(e));
+ipcMain.handle('session:archive', async (e) => archiveSession(e));
+ipcMain.handle('asset:save', async (e, args: { filename: string; bytes: ArrayBuffer }) =>
+  saveAsset(e, args),
 );
 
-ipcMain.handle('scene:load', async () => loadScene());
-ipcMain.handle('scene:save', async (_e, scene: WhiteboardScene) => saveScene(scene));
-ipcMain.handle('viewport:load', async () => loadViewport());
-ipcMain.handle('viewport:save', async (_e, vp: {
+ipcMain.handle('scene:load', async (e) => loadScene(e));
+ipcMain.handle('scene:save', async (e, scene: WhiteboardScene) => saveScene(e, scene));
+ipcMain.handle('viewport:load', async (e) => loadViewport(e));
+ipcMain.handle('viewport:save', async (e, vp: {
   scrollX: number;
   scrollY: number;
   zoom: number;
-}) => saveViewport(vp));
+}) => saveViewport(e, vp));
 
 const activeRuns = new Map<string, AbortController>();
 
@@ -310,7 +327,7 @@ async function runStreamingGenerate(
         usd,
         turns,
       });
-    await saveScene(scene);
+    await saveScene(event, scene);
   } catch (err) {
     if (!sender.isDestroyed())
       sender.send(channel, {
@@ -326,7 +343,7 @@ ipcMain.handle(
     event,
     req: { paper: PaperPayload; focus?: string },
   ): Promise<{ channel: string }> => {
-    await savePaper(req.paper);
+    await savePaper(event, req.paper);
     const channel = `generate:event:${randomBytes(4).toString('hex')}`;
     const ctrl = new AbortController();
     activeRuns.set(channel, ctrl);
@@ -377,7 +394,7 @@ ipcMain.handle(
         );
         if (!sender.isDestroyed())
           sender.send(channel, { type: 'done', elements: scene.elements });
-        await saveScene(scene);
+        await saveScene(event, scene);
       } catch (err) {
         if (!sender.isDestroyed())
           sender.send(channel, {
@@ -403,8 +420,11 @@ ipcMain.handle('generate:abort', async (_e, channel: string) => {
 
 // ---------- Window ----------
 
-async function createWindow(): Promise<void> {
-  await ensureWorkDir();
+async function createWindow(sessionId: string = FIRST_SESSION_ID): Promise<void> {
+  // Make sure the session dir exists before the renderer's first IPC
+  // call lands. Each window has its own session, so this runs per-call.
+  const root = app.getPath('userData');
+  await mkdir(join(root, 'sessions', sessionId, ASSETS_DIR), { recursive: true });
   // Set the dock icon during `npm run app` (dev) so the running app
   // doesn't show a generic Electron icon. When packaged via
   // electron-builder, build config is responsible for the .icns; this
@@ -434,6 +454,8 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   });
+  windowSessions.set(win.id, sessionId);
+  win.on('closed', () => windowSessions.delete(win.id));
 
   // Forward renderer console to main-process stderr so a tail on the
   // log file gives a single feed of both worlds. Cheap to leave on
@@ -460,10 +482,54 @@ async function createWindow(): Promise<void> {
   }
 }
 
-app.whenReady().then(createWindow);
+function buildAppMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'clawdSlate',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'File',
+      submenu: [
+        {
+          // Cmd+N spawns a fresh whiteboard window with its own session
+          // dir under sessions/<uuid>. The first window on app launch
+          // owns sessions/last so closing + reopening restores the
+          // previous whiteboard; new windows are scratchpads.
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => {
+            void createWindow(newSessionId());
+          },
+        },
+        { type: 'separator' },
+        { role: 'close' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+app.whenReady().then(async () => {
+  buildAppMenu();
+  await createWindow(FIRST_SESSION_ID);
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) void createWindow(FIRST_SESSION_ID);
 });
